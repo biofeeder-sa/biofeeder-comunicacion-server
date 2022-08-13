@@ -931,7 +931,7 @@ impl Protocol for ProtocolMQTT{
         let now = now.naive_utc();
 
         let start = now - chrono::Duration::hours(5i64);
-        let start_date = start - chrono::Duration::hours(start.hour() as i64) + chrono::Duration::hours(5i64) - chrono::Duration::hours(start.minute() as i64) - chrono::Duration::hours(start.second() as i64);
+        let start_date = start - chrono::Duration::hours(start.hour() as i64) + chrono::Duration::hours(5i64) - chrono::Duration::minutes(start.minute() as i64) - chrono::Duration::seconds(start.second() as i64);
         let hydrophone_analysis = device.get_or_create_hydro_now(start_date, now, conn);
         match hydrophone_analysis{
             Ok(hydro) => {
