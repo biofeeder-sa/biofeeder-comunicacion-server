@@ -27,8 +27,10 @@ pub struct HydrophoneAnalysis{
 }
 
 impl HydrophoneAnalysis{
-    pub fn create_lines(&self, sound_a: &str, sound_b: &str, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
-        let result = conn.execute("INSERT INTO hydrophone_analysis_line(sound_a, sound_b, analysis_id) VALUES ($1, $2, $3)", &[&sound_a, &sound_b, &self.id]);
+    pub fn create_lines(&self, sound_a: &str, sound_b: &str, now: NaiveDateTime, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
+        let sound_a = sound_a.parse::<f64>().unwrap();
+        let sound_b = sound_b.parse::<f64>().unwrap();
+        let result = conn.execute("INSERT INTO hydrophone_analysis_line(sound_a, sound_b, analysis_id, create_date, hopper_status) VALUES ($1, $2, $3, $4, $5)", &[&sound_a, &sound_b, &self.id, &now, &"full"]);
         match result {
             Ok(_r) => debug!("Creado line hydro"),
             Err(r) => info!("Error al crear lineas {}", r)
@@ -43,6 +45,7 @@ pub struct Device{
     pub name: String,
     pub address: String,
     pub protocol: String,
+    pub pond_id: Option<i32>,
     pub pond_name: Option<String>,
     pub farm_id: Option<i32>,
     pub status: Option<String>
@@ -52,7 +55,7 @@ type Shrimp = (Option<String>, Option<i32>);
 
 impl Device{
     /// Create a new device object
-    pub fn new(id: i32, network_id: i32, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>) -> Self{
+    pub fn new(id: i32, network_id: i32, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>) -> Self{
         Self{
             id,
             network_id,
@@ -61,7 +64,8 @@ impl Device{
             protocol,
             pond_name: shrimps.0,
             farm_id: shrimps.1,
-            status
+            status,
+            pond_id,
         }
     }
 
@@ -274,7 +278,8 @@ impl Device{
                             self.protocol.clone(),
                             (None,
                             row.get(4)) as Shrimp,
-                            None
+                            None,
+                            None,
                         )
                     );
                 };
@@ -308,7 +313,8 @@ impl Device{
                             self.protocol.clone(),
                             (None,
                             row.get(4)) as Shrimp,
-                            None
+                            None,
+                            None,
                         )
                     );
                 };
@@ -344,7 +350,8 @@ impl Device{
                             self.protocol.clone(),
                             (None,
                             row.get(4)) as Shrimp,
-                            None
+                            None,
+                            None,
                         )
                     );
                 };
@@ -388,7 +395,7 @@ impl Device{
         };
     }
 
-    pub fn get_or_create_hydro_now(&self, date: NaiveDate, now: NaiveDateTime, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<HydrophoneAnalysis, Error>{
+    pub fn get_or_create_hydro_now(&self, date: NaiveDateTime, now: NaiveDateTime, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<HydrophoneAnalysis, Error>{
         let result = conn.query("SELECT id FROM hydrophone_analysis where create_date<=$1 and create_date>=$2 and device_id=$3", &[&now, &date, &self.id])?;
         return if !result.is_empty() {
             let r = &result[0];
@@ -398,7 +405,7 @@ impl Device{
             };
             Ok(hydro)
         } else {
-            conn.execute("INSERT INTO hydrophone_analysis(device_id, create_date) VALUES($1, $2)", &[&self.id, &now]);
+            conn.execute("INSERT INTO hydrophone_analysis(device_id, create_date, farm_id, pond_id) VALUES($1, $2, $3, $4)", &[&self.id, &now, &self.farm_id, &self.pond_id]);
             let hydro = self.get_or_create_hydro_now(date, now, conn);
             hydro
         }
@@ -527,7 +534,7 @@ impl Device{
 
 /// Returns a device (if exists), for this case should be an UC device
 pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<Option<Device>, Error>{
-    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status \
+    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id \
     from device d \
     inner join protocol p on p.id=d.protocol_id \
     inner join shrimps_pond sp on sp.id=d.pond_id \
@@ -540,7 +547,7 @@ pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectio
         let device = Device::new(result.get(0), result.get(1),
                                  result.get(2), result.get(3), result.get(4),
                                  (result.get(5), result.get(6)) as Shrimp,
-        result.get(7));
+        result.get(7), result.get(8));
         Ok(Some(device))
     }else{
         info!("No se encontro el dispositivo con address {}", address);

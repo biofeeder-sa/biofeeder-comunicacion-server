@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::process;
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
 use to_binary::BinaryString;
 use log::{error, info, debug};
 use r2d2::PooledConnection;
@@ -931,15 +931,17 @@ impl Protocol for ProtocolMQTT{
         let now = now.naive_utc();
 
         let start = now - chrono::Duration::hours(5i64);
-        let start_date = start.date();
+        let start_date = start - chrono::Duration::hours(start.hour() as i64) + chrono::Duration::hours(5i64);
         let hydrophone_analysis = device.get_or_create_hydro_now(start_date, now, conn);
-        if let Ok(hydro) = hydrophone_analysis {
-            let sound_data = &data[9..];
-            let sound_a = sound_data[2];
-            let sound_b = sound_data[sound_data.len() - 3];
-            hydro.create_lines(sound_a, sound_b, conn);
+        match hydrophone_analysis{
+            Ok(hydro) => {
+                let sound_data = &data[9..];
+                let sound_a = sound_data[2];
+                let sound_b = sound_data[sound_data.len() - 3];
+                hydro.create_lines(sound_a, sound_b, now, conn);
+            },
+            Err(r) => info!("Error al crear hydrophone line {}", r)
         }
-
         // Obtenemos la variable indicador de duracion de sonido
         let real_date: Vec<String> = date
             .iter()
