@@ -3,7 +3,6 @@ extern crate core;
 mod communication;
 mod protocols;
 mod db;
-mod message;
 mod device;
 mod vars;
 
