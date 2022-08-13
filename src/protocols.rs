@@ -917,7 +917,7 @@ impl Protocol for ProtocolMQTT{
             let sound_data = &data[9..];
             let sound_a = sound_data[2];
             let sound_b = sound_data[sound_data.len() - 3];
-            hydrophone_analysis.create_lines(sound_a, sound_b, conn);
+            hydro.create_lines(sound_a, sound_b, conn);
         }
 
         // Obtenemos la variable indicador de duracion de sonido
