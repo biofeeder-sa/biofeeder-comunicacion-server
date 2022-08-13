@@ -35,7 +35,7 @@ fn get_conn(dbname: &str, host: &str, db_user: &str, password: &str, db_port: &s
 pub fn connect(dbname: &str) -> Option<Pool<PostgresConnectionManager<NoTls>>>{
     // Leemos db.ini para obtener las credenciales de las bases de datos
     let mut config = Ini::new();
-    let parser = config.load("db-config.ini").unwrap_or_else(|err|{
+    let parser = config.load("/var/local/db-config.ini").unwrap_or_else(|err|{
         info!("No se pudo leer el archivo {}", err);
         process::exit(1);
     });

@@ -19,7 +19,7 @@ fn main() {
     simple_logging::log_to_file("/var/log/communication.log", LevelFilter::Info);
     // Leemos el archivo db.ini para obtener la base de los clientes
     let mut config = Ini::new();
-    let lector = config.load("/home/biomatic/db-config.ini").unwrap_or_else(|err|{
+    let lector = config.load("/var/local/db-config.ini").unwrap_or_else(|err|{
         info!("Error al leer el archivo {}", err);
         process::exit(1);
     });
