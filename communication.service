@@ -1,0 +1,13 @@
+[Unit]
+Description=Proceso de comunicacion biofeeder-comunicacion-server
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/var/local/
+Type=simple
+ExecStart=/var/local/biofeeder-comunicacion-server
+GuessMainPID=no
+
+[Install]
+WantedBy=multi-user.target
