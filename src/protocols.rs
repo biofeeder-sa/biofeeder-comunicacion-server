@@ -338,392 +338,392 @@ impl Protocol for ProtocolX2{
 /// Struct for communication through a UC 1.0
 struct ProtocolUC;
 
-impl Protocol for ProtocolUC{
-    fn log_recovery_function(&self, _device: &Device, _data: &Vec<&str>, _conn: &mut  PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
-        todo!()
-    }
-
-    /// Save rssi logs into database
-    fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn: &mut  PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        // Obtenemos todos los hijos de esa UC
-        let devices = device.get_children_devices(conn);
-        let mut placeholder: Option<HashMap<String, String>> = None;
-
-        // Si existe algun hijo(alimentador)
-        if let Some(d) = devices{
-            let mut hash_tooltip: HashMap<String, String> = HashMap::new();
-            let data_len: usize = data.len();
-            let now = chrono::Utc::now();
-            let now = now.naive_utc();
-            // let now = now.to_string();
-
-            // Iteramos sobre los datos
-            // En esta trama llegan para todos los alimentadores
-            for i in 0..data_len{
-                // Segun la posicion sacamos el alimentador asociado
-                let device_id = &d[i];
-
-                // Obtenemos el valor para ese alimentador
-                let val = i32::from_str_radix(data[i], 16).unwrap() as f32;
-                let var_id = device_id.get_variable("4442", conn);
-                if let Some(var) = var_id{
-
-                    // Actualizamos la variable RSSI
-                    var.update(&val.to_string(), conn);
-                    hash_tooltip.insert(device_id.name.to_string(), val.to_string());
-
-                    // Insertamos el log en la base de datos
-                    device_id.insert_into_logs(var.base_var_id, &now, val, device.cycle_id, "4442", None, conn);
-                }
-            }
-            if !hash_tooltip.is_empty(){
-                placeholder = Some(hash_tooltip);
-            }
-        }
-        (None, MessageMode::ModeLogResponse, "Log RSSI".to_string(), placeholder)
-
-    }
-
-    /// Parse a read response from feeders
-    fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        // Sacamos la posicion del alimentador que respondio
-        let position = str_to_int(data[0], 16);
-
-        // Tamano de la trama
-        let variables_len = str_to_int(data[1], 16);
-
-        // Los datos que deben ser procesados, esto es, quitar la posicion y el tamano de la trama
-        let mut raw_data = data[2..data.len()].to_vec();
-        let mut placeholder: HashMap<String, String> = HashMap::new();
-
-        // El codigo va a cambiar
-        let mut code: String;
-
-        // Todos los alimentadores asociados a esta UC
-        let op_children = device.get_children_devices(conn);
-        if let Some(children) = op_children{
-            // Obtenemos el alimentador
-            let child = &children[position as usize];
-            let mut var: Option<Var>;
-            let mut len_data_var = 0;
-            let mut devices_vec: Vec<i32> = Vec::new();
-            // Iteramos sobre las variables respondidas
-            for _i in 0..variables_len {
-
-                // El codigo de la variable
-                code = raw_data[..2].join("");
-                var = child.get_variable(code.as_str(), conn);
-                devices_vec.push(child.id);
-                // child.update_communication(conn);
-                if let Some(v) = var{
-                    len_data_var = v.size as usize;
-                    let decoded_value = v.decode(&raw_data[2..=1 + len_data_var].join(" "));
-                    child.verify_bytes_seteo(code.as_str(), &decoded_value, conn);
-                    child.create_logs_from_fetch(&v, &decoded_value, conn);
-                    v.update(&decoded_value, conn);
-                    placeholder.insert(v.name, decoded_value);
-                }
-                raw_data.drain(..=1 + len_data_var);
-            };
-            bulk_update_communication(&devices_vec, conn);
-            placeholder.insert("Dispositivo".to_string(), child.name.clone());
-        }
-
-        (None, MessageMode::ModeReadResponse, "Respuesta lectura alimentador".to_string(), Some(placeholder))
-    }
-
-    /// Simple ACK is returned
-    fn write_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let op_children = device.get_children_devices(conn);
-        let position = str_to_int(data[0], 16);
-        let mut tooltip: Option<HashMap<String, String>> = None;
-        if let Some(children) = op_children {
-            // Obtenemos el alimentador
-            let child = &children[position as usize];
-            let placeholder: HashMap<String, String> = HashMap::from([
-                ("Dispositivo".to_string(), child.name.clone())
-            ]);
-            tooltip = Some(placeholder);
-        };
-        (None, MessageMode::ModeWriteResponse, "Respuesta de escritura alimentador".to_string(), tooltip)
-    }
-
-    fn log_kg_hopper(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
-        todo!()
-    }
-
-    fn log_alarms_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let device_position = str_to_int(data[6], 16);
-        let alarms = str_to_int(data[7..11].join("").as_str(), 16);
-        let devices = device.get_children_devices(conn).unwrap();
-        let target_device_id = &devices[device_position as usize];
-        target_device_id.insert_alarm(alarms, conn);
-        (None, MessageMode::ModeLogResponse, "Log de alarma".to_string(), None)
-    }
-
-    /// Parse a accumulation log from UC
-    fn log_accumulation_day_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        // Sacamos el ano actual para ser usado al guardar el log
-        // esto debido a un problema de las UC 1.0 que envian con ano incorrecto
-        let year = (chrono::offset::Utc::now().year() % 2000).to_string();
-        let mut placeholder: HashMap<String, String> = HashMap::new();
-
-        // Obtenemos la fecha y hora que nos envia la UC, obviamos el ano
-        let hex_date = data[0..5].to_vec();
-
-        // Transformas el ano de hexadecimal a decimal
-        let mut real_date: Vec<String> = hex_date
-            .iter()
-            .map(|x| str_to_int(*x, 16).to_string())
-            .collect();
-        real_date.push(year);
-
-        // Obtenemos el objeto NaiveDateTime para despues formatearlo
-        let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-        // Timestamp formatado
-        // let timestamp = timestamp.to_string();
-
-        // Obtenemos el valor de los gramos acumulados, de hexadecimal a decimal
-        let value = str_to_int(data[6..10].to_vec().join("").as_str(), 16) as f32;
-
-        // Actualizamos la variable de gramos acumulados
-        let var_id = device.get_variable("0E72", conn);
-
-        if let Some(var) = var_id {
-            placeholder.insert(var.name, value.to_string());
-            // TODO: Es realmente necesario crear estos logs?
-            // Creamos logs de los gramos acumulados por dia
-            device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "0E72",None, conn);
-        }
-        (None, MessageMode::ModeLogResponse, "Log de acumulado x dia".to_string(), Some(placeholder))
-    }
-
-    /// Parse a oxygen/temperatura frame
-    fn log_sensor_do_temp_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let sensor_type = device.get_variable("AC00", conn);
-        let year = (chrono::offset::Utc::now().year() % 2000).to_string();
-        let mut placeholder: HashMap<String, String> = HashMap::new();
-        let hex_date = data[0..5].to_vec();
-        let mut real_date: Vec<String> = hex_date
-            .iter()
-            .map(|x| str_to_int(*x, 16).to_string())
-            .collect();
-        real_date.push(year);
-        let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-
-        // Transformamos el valor de la temperatura de hexadecimal a decimal
-        let value = ustr_to_int(data[6..10].join("").as_str(), 16);
-
-        // Convertimos en un array de bytes u8
-        let gg: [u8; 4] = value.to_be_bytes();
-
-        // Transformamos de [u8] a flotante f32
-        let value = f32::from_ne_bytes(gg);
-
-        // Obtenemos la variable y creamos el log
-        let var_id = device.get_variable("0E87", conn);
-
-        if let Some(var) = var_id {
-            placeholder.insert(var.name, value.to_string());
-
-            device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "0E87", None, conn);
-        }
-
-        // Transformamos de [u8] a flotante f32
-        let mut value: f32;
-
-
-        if let Some(sensor_type) = sensor_type{
-            // Obtenemos la variable y creamos el log
-            let var_id = device.get_variable("0E8B", conn);
-
-            let mut value_u32: u32 = 0;
-
-            if sensor_type.value == "4".to_string() || sensor_type.value == "04".to_string(){
-                // Transformamos el valor del oxigeno de hexadecimal a decimal
-                value_u32 = ustr_to_int(data[14..=17].join("").as_str(), 16);
-
-                // Convertimos en un array de bytes u8
-                let gg: [u8; 4] = value_u32.to_be_bytes();
-
-                // Transformamos de [u8] a flotante f32
-                value = f32::from_ne_bytes(gg);
-
-            }else{
-                // Transformamos el valor del oxigeno de hexadecimal a decimal
-                value_u32 = ustr_to_int(data[10..14].join("").as_str(), 16);
-
-                let gg: [u8; 4] = value_u32.to_be_bytes();
-
-                // Transformamos de [u8] a flotante f32
-                value = f32::from_ne_bytes(gg);
-
-                if device.address.as_str() == "0013A20041646DB3"{
-                    value *= 13.04f32
-                }
-            }
-
-
-            if let Some(var) = var_id {
-                placeholder.insert(var.name, value.to_string());
-
-                device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "0E8B",None, conn);
-            }
-
-        }
-        let sensors = device.get_sensors(conn);
-        if let Some(sensors) = sensors{
-            for sensor in sensors{
-                sensor.update_communication(conn);
-            }
-        }
-
-        (None, MessageMode::ModeLogResponse, "Log de Do/Temp".to_string(), Some(placeholder))
-    }
-
-    /// Parse a feed log from UC
-    fn feed_log_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let year = (chrono::offset::Utc::now().year() % 2000).to_string();
-        let mut placeholder: HashMap<String, String> = HashMap::new();
-        let hex_date = data[0..5].to_vec();
-        let mut real_date: Vec<String> = hex_date
-            .iter()
-            .map(|x| str_to_int(*x, 16).to_string())
-            .collect();
-        real_date.push(year);
-        let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-
-        // Obtenemos el valor de hexadecimal a decimal y lo transformamos en f32
-        let value = str_to_int(data[6..10].to_vec().join("").as_str(), 16) as f32;
-        let var_id = device.get_variable("0D49", conn);
-
-        if let Some(var) = var_id {
-            placeholder.insert(var.name, value.to_string());
-
-            device.insert_into_logs(var.base_var_id, &timestamp, value,device.cycle_id, "0D49",None, conn);
-        }
-
-        // Obtenemos la data de los estados de dispositivos
-        let empty_feeders = str_to_int(data[14..18].to_vec().join("").as_str(), 16);
-        let response_feeders = str_to_int(data[10..14].to_vec().join("").as_str(), 16);
-        let children = device.get_feeders(conn).unwrap();
-
-        let base: i32 = 2;
-        let mut devices_vec: Vec<i32> = Vec::new();
-        // Iteramos sobre todos los alimentadores
-        for (i, child) in children.iter().enumerate(){
-
-            // Si esta vacio
-            if empty_feeders & base.pow(i as u32) > 0 || response_feeders & base.pow(i as u32) == 0{
-                child.create_device_status(&timestamp, DeviceStatus::Empty, conn);
-            }else if response_feeders & base.pow(i as u32) > 0{
-                child.create_device_status(&timestamp, DeviceStatus::Full, conn);
-            }
-            devices_vec.push(child.id);
-        }
-        bulk_update_communication(&devices_vec, conn);
-
-        devices_vec.push(device.id);
-        bulk_clean_alarms(&devices_vec, Some(device.id), conn);
-
-        (None, MessageMode::ModeLogResponse, "Log acumulado x hora".to_string(), Some(placeholder))
-    }
-
-    /// Parse a confirmation feed log
-    fn feed_log_confirmation_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let year = (chrono::offset::Utc::now().year() % 2000).to_string();
-        let mut placeholder: HashMap<String, String> = HashMap::new();
-        let hex_date = data[0..5].to_vec();
-        // hex_date.push(year.as_str());
-        let mut real_date: Vec<String> = hex_date
-            .iter()
-            .map(|x| str_to_int(*x, 16).to_string())
-            .collect();
-        real_date.push(year);
-        let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-
-        // Sacamos el valor de los gramos por ciclo
-        let value = str_to_int(data[7..9].to_vec().join("").as_str(), 16) as f32;
-
-        // Sacamos la variable de los gramos por ciclo y creamos el log
-        let var_id = device.get_variable("0CEB", conn);
-
-        if let Some(var) = var_id {
-            placeholder.insert(var.name, value.to_string());
-
-            device.insert_into_logs(var.base_var_id, &timestamp, value,device.cycle_id, "0CEB",None, conn);
-        }
-
-        if device.has_hydro(conn){
-            device.insert_pre_alarm(conn);
-        }
-
-        (None, MessageMode::ModeLogResponse, "Log de alimentacion".to_string(), Some(placeholder))
-
-    }
-
-    fn log_sound_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        todo!()
-    }
-
-    fn log_sound_function_x2(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let raw_data = &data[6..data.len()];
-        let date: Vec<&str> = data[..6].to_vec();
-        let var = device.get_variable("DDE0", conn).unwrap();
-        let var_interval_sound = device.get_variable("DDDE", conn).unwrap();
-
-        // Obtenemos la variable indicador de duracion de sonido
-        let total_seconds = var_interval_sound.value.as_str().parse::<i64>().unwrap();
-        let real_date: Vec<String> = date
-            .iter()
-            .map(|x| str_to_int(*x, 16).to_string())
-            .collect();
-        let mut timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-        let interval_sec = 10i64;
-        // Iteramos sobre la data y obtenemos cada valor de sonido
-        for sound_log in raw_data.chunks(2){
-            // Sacamos el valor como f32
-            let value = str_to_int(sound_log[..=1].to_vec().join("").as_str(), 16) as f32;
-            debug!("Insertando sonido {}...", value);
-            device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "DDE0", None, conn);
-
-            timestamp += chrono::Duration::seconds(interval_sec);
-        };
-        (None, MessageMode::ModeLogResponse, "Log de sonido".to_string(), None)
-    }
-
-    fn log_dosage_hydro_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        todo!()
-    }
-
-    fn log_status_uc_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        todo!()
-    }
-
-    fn log_status_device_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        todo!()
-    }
-
-    fn xbee_error_function(&self) -> ResponseCommand {
-        todo!()
-    }
-
-    fn hydrophone_error_function(&self) -> ResponseCommand {
-        todo!()
-    }
-
-    fn assign_device_response_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        todo!()
-    }
-
-    fn mac_address_response_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        todo!()
-    }
-
-    fn ping_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        todo!()
-    }
-}
+// impl Protocol for ProtocolUC{
+//     fn log_recovery_function(&self, _device: &Device, _data: &Vec<&str>, _conn: &mut  PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
+//         todo!()
+//     }
+//
+//     /// Save rssi logs into database
+//     fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn: &mut  PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         // Obtenemos todos los hijos de esa UC
+//         let devices = device.get_children_devices(conn);
+//         let mut placeholder: Option<HashMap<String, String>> = None;
+//
+//         // Si existe algun hijo(alimentador)
+//         if let Some(d) = devices{
+//             let mut hash_tooltip: HashMap<String, String> = HashMap::new();
+//             let data_len: usize = data.len();
+//             let now = chrono::Utc::now();
+//             let now = now.naive_utc();
+//             // let now = now.to_string();
+//
+//             // Iteramos sobre los datos
+//             // En esta trama llegan para todos los alimentadores
+//             for i in 0..data_len{
+//                 // Segun la posicion sacamos el alimentador asociado
+//                 let device_id = &d[i];
+//
+//                 // Obtenemos el valor para ese alimentador
+//                 let val = i32::from_str_radix(data[i], 16).unwrap() as f32;
+//                 let var_id = device_id.get_variable("4442", conn);
+//                 if let Some(var) = var_id{
+//
+//                     // Actualizamos la variable RSSI
+//                     var.update(&val.to_string(), conn);
+//                     hash_tooltip.insert(device_id.name.to_string(), val.to_string());
+//
+//                     // Insertamos el log en la base de datos
+//                     device_id.insert_into_logs(var.base_var_id, &now, val, device.cycle_id, "4442", None, conn);
+//                 }
+//             }
+//             if !hash_tooltip.is_empty(){
+//                 placeholder = Some(hash_tooltip);
+//             }
+//         }
+//         (None, MessageMode::ModeLogResponse, "Log RSSI".to_string(), placeholder)
+//
+//     }
+//
+//     /// Parse a read response from feeders
+//     fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         // Sacamos la posicion del alimentador que respondio
+//         let position = str_to_int(data[0], 16);
+//
+//         // Tamano de la trama
+//         let variables_len = str_to_int(data[1], 16);
+//
+//         // Los datos que deben ser procesados, esto es, quitar la posicion y el tamano de la trama
+//         let mut raw_data = data[2..data.len()].to_vec();
+//         let mut placeholder: HashMap<String, String> = HashMap::new();
+//
+//         // El codigo va a cambiar
+//         let mut code: String;
+//
+//         // Todos los alimentadores asociados a esta UC
+//         let op_children = device.get_children_devices(conn);
+//         if let Some(children) = op_children{
+//             // Obtenemos el alimentador
+//             let child = &children[position as usize];
+//             let mut var: Option<Var>;
+//             let mut len_data_var = 0;
+//             let mut devices_vec: Vec<i32> = Vec::new();
+//             // Iteramos sobre las variables respondidas
+//             for _i in 0..variables_len {
+//
+//                 // El codigo de la variable
+//                 code = raw_data[..2].join("");
+//                 var = child.get_variable(code.as_str(), conn);
+//                 devices_vec.push(child.id);
+//                 // child.update_communication(conn);
+//                 if let Some(v) = var{
+//                     len_data_var = v.size as usize;
+//                     let decoded_value = v.decode(&raw_data[2..=1 + len_data_var].join(" "));
+//                     child.verify_bytes_seteo(code.as_str(), &decoded_value, conn);
+//                     child.create_logs_from_fetch(&v, &decoded_value, conn);
+//                     v.update(&decoded_value, conn);
+//                     placeholder.insert(v.name, decoded_value);
+//                 }
+//                 raw_data.drain(..=1 + len_data_var);
+//             };
+//             bulk_update_communication(&devices_vec, conn);
+//             placeholder.insert("Dispositivo".to_string(), child.name.clone());
+//         }
+//
+//         (None, MessageMode::ModeReadResponse, "Respuesta lectura alimentador".to_string(), Some(placeholder))
+//     }
+//
+//     /// Simple ACK is returned
+//     fn write_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         let op_children = device.get_children_devices(conn);
+//         let position = str_to_int(data[0], 16);
+//         let mut tooltip: Option<HashMap<String, String>> = None;
+//         if let Some(children) = op_children {
+//             // Obtenemos el alimentador
+//             let child = &children[position as usize];
+//             let placeholder: HashMap<String, String> = HashMap::from([
+//                 ("Dispositivo".to_string(), child.name.clone())
+//             ]);
+//             tooltip = Some(placeholder);
+//         };
+//         (None, MessageMode::ModeWriteResponse, "Respuesta de escritura alimentador".to_string(), tooltip)
+//     }
+//
+//     fn log_kg_hopper(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
+//         todo!()
+//     }
+//
+//     fn log_alarms_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         let device_position = str_to_int(data[6], 16);
+//         let alarms = str_to_int(data[7..11].join("").as_str(), 16);
+//         let devices = device.get_children_devices(conn).unwrap();
+//         let target_device_id = &devices[device_position as usize];
+//         target_device_id.insert_alarm(alarms, conn);
+//         (None, MessageMode::ModeLogResponse, "Log de alarma".to_string(), None)
+//     }
+//
+//     /// Parse a accumulation log from UC
+//     fn log_accumulation_day_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         // Sacamos el ano actual para ser usado al guardar el log
+//         // esto debido a un problema de las UC 1.0 que envian con ano incorrecto
+//         let year = (chrono::offset::Utc::now().year() % 2000).to_string();
+//         let mut placeholder: HashMap<String, String> = HashMap::new();
+//
+//         // Obtenemos la fecha y hora que nos envia la UC, obviamos el ano
+//         let hex_date = data[0..5].to_vec();
+//
+//         // Transformas el ano de hexadecimal a decimal
+//         let mut real_date: Vec<String> = hex_date
+//             .iter()
+//             .map(|x| str_to_int(*x, 16).to_string())
+//             .collect();
+//         real_date.push(year);
+//
+//         // Obtenemos el objeto NaiveDateTime para despues formatearlo
+//         let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
+//         // Timestamp formatado
+//         // let timestamp = timestamp.to_string();
+//
+//         // Obtenemos el valor de los gramos acumulados, de hexadecimal a decimal
+//         let value = str_to_int(data[6..10].to_vec().join("").as_str(), 16) as f32;
+//
+//         // Actualizamos la variable de gramos acumulados
+//         let var_id = device.get_variable("0E72", conn);
+//
+//         if let Some(var) = var_id {
+//             placeholder.insert(var.name, value.to_string());
+//             // TODO: Es realmente necesario crear estos logs?
+//             // Creamos logs de los gramos acumulados por dia
+//             device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "0E72",None, conn);
+//         }
+//         (None, MessageMode::ModeLogResponse, "Log de acumulado x dia".to_string(), Some(placeholder))
+//     }
+//
+//     /// Parse a oxygen/temperatura frame
+//     fn log_sensor_do_temp_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         let sensor_type = device.get_variable("AC00", conn);
+//         let year = (chrono::offset::Utc::now().year() % 2000).to_string();
+//         let mut placeholder: HashMap<String, String> = HashMap::new();
+//         let hex_date = data[0..5].to_vec();
+//         let mut real_date: Vec<String> = hex_date
+//             .iter()
+//             .map(|x| str_to_int(*x, 16).to_string())
+//             .collect();
+//         real_date.push(year);
+//         let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
+//
+//         // Transformamos el valor de la temperatura de hexadecimal a decimal
+//         let value = ustr_to_int(data[6..10].join("").as_str(), 16);
+//
+//         // Convertimos en un array de bytes u8
+//         let gg: [u8; 4] = value.to_be_bytes();
+//
+//         // Transformamos de [u8] a flotante f32
+//         let value = f32::from_ne_bytes(gg);
+//
+//         // Obtenemos la variable y creamos el log
+//         let var_id = device.get_variable("0E87", conn);
+//
+//         if let Some(var) = var_id {
+//             placeholder.insert(var.name, value.to_string());
+//
+//             device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "0E87", None, conn);
+//         }
+//
+//         // Transformamos de [u8] a flotante f32
+//         let mut value: f32;
+//
+//
+//         if let Some(sensor_type) = sensor_type{
+//             // Obtenemos la variable y creamos el log
+//             let var_id = device.get_variable("0E8B", conn);
+//
+//             let mut value_u32: u32 = 0;
+//
+//             if sensor_type.value == "4".to_string() || sensor_type.value == "04".to_string(){
+//                 // Transformamos el valor del oxigeno de hexadecimal a decimal
+//                 value_u32 = ustr_to_int(data[14..=17].join("").as_str(), 16);
+//
+//                 // Convertimos en un array de bytes u8
+//                 let gg: [u8; 4] = value_u32.to_be_bytes();
+//
+//                 // Transformamos de [u8] a flotante f32
+//                 value = f32::from_ne_bytes(gg);
+//
+//             }else{
+//                 // Transformamos el valor del oxigeno de hexadecimal a decimal
+//                 value_u32 = ustr_to_int(data[10..14].join("").as_str(), 16);
+//
+//                 let gg: [u8; 4] = value_u32.to_be_bytes();
+//
+//                 // Transformamos de [u8] a flotante f32
+//                 value = f32::from_ne_bytes(gg);
+//
+//                 if device.address.as_str() == "0013A20041646DB3"{
+//                     value *= 13.04f32
+//                 }
+//             }
+//
+//
+//             if let Some(var) = var_id {
+//                 placeholder.insert(var.name, value.to_string());
+//
+//                 device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "0E8B",None, conn);
+//             }
+//
+//         }
+//         let sensors = device.get_sensors(conn);
+//         if let Some(sensors) = sensors{
+//             for sensor in sensors{
+//                 sensor.update_communication(conn);
+//             }
+//         }
+//
+//         (None, MessageMode::ModeLogResponse, "Log de Do/Temp".to_string(), Some(placeholder))
+//     }
+//
+//     /// Parse a feed log from UC
+//     fn feed_log_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         let year = (chrono::offset::Utc::now().year() % 2000).to_string();
+//         let mut placeholder: HashMap<String, String> = HashMap::new();
+//         let hex_date = data[0..5].to_vec();
+//         let mut real_date: Vec<String> = hex_date
+//             .iter()
+//             .map(|x| str_to_int(*x, 16).to_string())
+//             .collect();
+//         real_date.push(year);
+//         let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
+//
+//         // Obtenemos el valor de hexadecimal a decimal y lo transformamos en f32
+//         let value = str_to_int(data[6..10].to_vec().join("").as_str(), 16) as f32;
+//         let var_id = device.get_variable("0D49", conn);
+//
+//         if let Some(var) = var_id {
+//             placeholder.insert(var.name, value.to_string());
+//
+//             device.insert_into_logs(var.base_var_id, &timestamp, value,device.cycle_id, "0D49",None, conn);
+//         }
+//
+//         // Obtenemos la data de los estados de dispositivos
+//         let empty_feeders = str_to_int(data[14..18].to_vec().join("").as_str(), 16);
+//         let response_feeders = str_to_int(data[10..14].to_vec().join("").as_str(), 16);
+//         let children = device.get_feeders(conn).unwrap();
+//
+//         let base: i32 = 2;
+//         let mut devices_vec: Vec<i32> = Vec::new();
+//         // Iteramos sobre todos los alimentadores
+//         for (i, child) in children.iter().enumerate(){
+//
+//             // Si esta vacio
+//             if empty_feeders & base.pow(i as u32) > 0 || response_feeders & base.pow(i as u32) == 0{
+//                 child.create_device_status(&timestamp, DeviceStatus::Empty, conn);
+//             }else if response_feeders & base.pow(i as u32) > 0{
+//                 child.create_device_status(&timestamp, DeviceStatus::Full, conn);
+//             }
+//             devices_vec.push(child.id);
+//         }
+//         bulk_update_communication(&devices_vec, conn);
+//
+//         devices_vec.push(device.id);
+//         bulk_clean_alarms(&devices_vec, Some(device.id), conn);
+//
+//         (None, MessageMode::ModeLogResponse, "Log acumulado x hora".to_string(), Some(placeholder))
+//     }
+//
+//     /// Parse a confirmation feed log
+//     fn feed_log_confirmation_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         let year = (chrono::offset::Utc::now().year() % 2000).to_string();
+//         let mut placeholder: HashMap<String, String> = HashMap::new();
+//         let hex_date = data[0..5].to_vec();
+//         // hex_date.push(year.as_str());
+//         let mut real_date: Vec<String> = hex_date
+//             .iter()
+//             .map(|x| str_to_int(*x, 16).to_string())
+//             .collect();
+//         real_date.push(year);
+//         let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
+//
+//         // Sacamos el valor de los gramos por ciclo
+//         let value = str_to_int(data[7..9].to_vec().join("").as_str(), 16) as f32;
+//
+//         // Sacamos la variable de los gramos por ciclo y creamos el log
+//         let var_id = device.get_variable("0CEB", conn);
+//
+//         if let Some(var) = var_id {
+//             placeholder.insert(var.name, value.to_string());
+//
+//             device.insert_into_logs(var.base_var_id, &timestamp, value,device.cycle_id, "0CEB",None, conn);
+//         }
+//
+//         if device.has_hydro(conn){
+//             device.insert_pre_alarm(conn);
+//         }
+//
+//         (None, MessageMode::ModeLogResponse, "Log de alimentacion".to_string(), Some(placeholder))
+//
+//     }
+//
+//     fn log_sound_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         todo!()
+//     }
+//
+//     fn log_sound_function_x2(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         let raw_data = &data[6..data.len()];
+//         let date: Vec<&str> = data[..6].to_vec();
+//         let var = device.get_variable("DDE0", conn).unwrap();
+//         let var_interval_sound = device.get_variable("DDDE", conn).unwrap();
+//
+//         // Obtenemos la variable indicador de duracion de sonido
+//         let total_seconds = var_interval_sound.value.as_str().parse::<i64>().unwrap();
+//         let real_date: Vec<String> = date
+//             .iter()
+//             .map(|x| str_to_int(*x, 16).to_string())
+//             .collect();
+//         let mut timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
+//         let interval_sec = 10i64;
+//         // Iteramos sobre la data y obtenemos cada valor de sonido
+//         for sound_log in raw_data.chunks(2){
+//             // Sacamos el valor como f32
+//             let value = str_to_int(sound_log[..=1].to_vec().join("").as_str(), 16) as f32;
+//             debug!("Insertando sonido {}...", value);
+//             device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "DDE0", None, conn);
+//
+//             timestamp += chrono::Duration::seconds(interval_sec);
+//         };
+//         (None, MessageMode::ModeLogResponse, "Log de sonido".to_string(), None)
+//     }
+//
+//     fn log_dosage_hydro_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         todo!()
+//     }
+//
+//     fn log_status_uc_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         todo!()
+//     }
+//
+//     fn log_status_device_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         todo!()
+//     }
+//
+//     fn xbee_error_function(&self) -> ResponseCommand {
+//         todo!()
+//     }
+//
+//     fn hydrophone_error_function(&self) -> ResponseCommand {
+//         todo!()
+//     }
+//
+//     fn assign_device_response_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         todo!()
+//     }
+//
+//     fn mac_address_response_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         todo!()
+//     }
+//
+//     fn ping_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+//         todo!()
+//     }
+// }
 
 
 struct ProtocolMQTT;
@@ -759,56 +759,72 @@ impl Protocol for ProtocolMQTT{
         (None, MessageMode::LogRecovery, "".to_string(), None)
     }
 
-    fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        // Es igual que protocolo UC
-        ProtocolUC{}.rssi_function(device, data, conn)
+    fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
     }
 
-    fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        // Es igual que protocolo UC
-        ProtocolUC{}.read_response_vars_other_function(device, data, conn)
+    fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
     }
 
     fn write_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        // Es igual que protocolo UC
-        ProtocolUC{}.write_response_vars_other_function(device, data, conn)
+        todo!()
     }
 
-    fn log_kg_hopper(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let mut placeholder: HashMap<String, String> = HashMap::new();
-        let hex_date = data[0..6].to_vec();
-        let real_date: Vec<String> = hex_date
-            .iter()
-            .map(|x| str_to_int(*x, 16).to_string())
-            .collect();
-        let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-        let device_position = str_to_int(data[6], 16);
-        let devices = device.get_children_devices(conn).unwrap();
-        let target_device_id = &devices[device_position as usize];
-
-        let value = str_to_int(data[7..=10].to_vec().join("").as_str(), 16) as f32;
-        let var_id = target_device_id.get_variable("0E9F", conn);
-
-        if let Some(var) = var_id {
-            placeholder.insert(var.name, value.to_string());
-
-            target_device_id.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "0E9F",None, conn);
-        }
-
-        let value_gr_dosage = str_to_int(data[11..=12].to_vec().join("").as_str(), 16) as f32;
-        let var_id = target_device_id.get_variable("0CEB", conn);
-
-        if let Some(var) = var_id {
-            placeholder.insert(var.name, value_gr_dosage.to_string());
-
-            target_device_id.insert_into_logs(var.base_var_id, &timestamp, value_gr_dosage, device.cycle_id, "0CEB",None, conn);
-        }
-
-        let value_feed_rate = str_to_int(data[13..=14].to_vec().join("").as_str(), 16) as f32;
-        placeholder.insert("Tasa de alimentacion".to_string(), value_feed_rate.to_string());
-
-        (None, MessageMode::ModeLogResponse, "Log de capacitancia".to_string(), Some(placeholder))
+    fn log_kg_hopper(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
     }
+
+    // fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    //     // Es igual que protocolo UC
+    //     ProtocolUC{}.rssi_function(device, data, conn)
+    // }
+    //
+    // fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    //     // Es igual que protocolo UC
+    //     ProtocolUC{}.read_response_vars_other_function(device, data, conn)
+    // }
+    //
+    // fn write_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    //     // Es igual que protocolo UC
+    //     ProtocolUC{}.write_response_vars_other_function(device, data, conn)
+    // }
+
+    // fn log_kg_hopper(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    //     let mut placeholder: HashMap<String, String> = HashMap::new();
+    //     let hex_date = data[0..6].to_vec();
+    //     let real_date: Vec<String> = hex_date
+    //         .iter()
+    //         .map(|x| str_to_int(*x, 16).to_string())
+    //         .collect();
+    //     let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
+    //     let device_position = str_to_int(data[6], 16);
+    //     let devices = device.get_children_devices(conn).unwrap();
+    //     let target_device_id = &devices[device_position as usize];
+    //
+    //     let value = str_to_int(data[7..=10].to_vec().join("").as_str(), 16) as f32;
+    //     let var_id = target_device_id.get_variable("0E9F", conn);
+    //
+    //     if let Some(var) = var_id {
+    //         placeholder.insert(var.name, value.to_string());
+    //
+    //         target_device_id.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "0E9F",None, conn);
+    //     }
+    //
+    //     let value_gr_dosage = str_to_int(data[11..=12].to_vec().join("").as_str(), 16) as f32;
+    //     let var_id = target_device_id.get_variable("0CEB", conn);
+    //
+    //     if let Some(var) = var_id {
+    //         placeholder.insert(var.name, value_gr_dosage.to_string());
+    //
+    //         target_device_id.insert_into_logs(var.base_var_id, &timestamp, value_gr_dosage, device.cycle_id, "0CEB",None, conn);
+    //     }
+    //
+    //     let value_feed_rate = str_to_int(data[13..=14].to_vec().join("").as_str(), 16) as f32;
+    //     placeholder.insert("Tasa de alimentacion".to_string(), value_feed_rate.to_string());
+    //
+    //     (None, MessageMode::ModeLogResponse, "Log de capacitancia".to_string(), Some(placeholder))
+    // }
 
     fn log_alarms_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
         let device_position = str_to_int(data[6], 16);
@@ -828,9 +844,13 @@ impl Protocol for ProtocolMQTT{
         todo!()
     }
 
-    fn log_sensor_do_temp_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        ProtocolUC{}.log_sensor_do_temp_function(device, data, conn)
+    fn log_sensor_do_temp_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
     }
+
+    // fn log_sensor_do_temp_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    //     ProtocolUC{}.log_sensor_do_temp_function(device, data, conn)
+    // }
 
     /// Parse a feed log from UC 2.0
     fn feed_log_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
@@ -844,11 +864,11 @@ impl Protocol for ProtocolMQTT{
         let value = str_to_int(data[6..10].to_vec().join("").as_str(), 16) as f32;
         let var_id = device.get_variable("0D49", conn);
 
-        if let Some(var) = var_id {
-            placeholder.insert(var.name, value.to_string());
-
-            device.insert_into_logs(var.base_var_id, &timestamp, value,device.cycle_id, "0D49",None, conn);
-        }
+        // if let Some(var) = var_id {
+        //     placeholder.insert(var.name, value.to_string());
+        //
+        //     device.insert_into_logs(var.base_var_id, &timestamp, value,device.cycle_id, "0D49",None, conn);
+        // }
 
         let empty_feeders = str_to_int(data[10..12].to_vec().join("").as_str(), 16);
         let children = device.get_feeders(conn).unwrap();
@@ -881,12 +901,12 @@ impl Protocol for ProtocolMQTT{
         let feeders = feeders.add_spaces().unwrap();
         let var_id = device.get_variable("0CEB", conn);
         total_feeders = total_feeders.replace("0", "");
-        if let Some(var) = var_id {
-            placeholder.insert(var.name, value.to_string());
-            placeholder.insert("Alimentadores".to_owned(), feeders.to_string());
-
-            device.insert_into_logs(var.base_var_id, &timestamp, value,device.cycle_id, "0CEB",Some(&total_feeders.len().to_string()), conn);
-        }
+        // if let Some(var) = var_id {
+        //     placeholder.insert(var.name, value.to_string());
+        //     placeholder.insert("Alimentadores".to_owned(), feeders.to_string());
+        //
+        //     device.insert_into_logs(var.base_var_id, &timestamp, value,device.cycle_id, "0CEB",Some(&total_feeders.len().to_string()), conn);
+        // }
 
         // Iteramos sobre cada alimentador y creamos el estado de las tolvas
         let children = device.get_feeders(conn).unwrap();
@@ -927,14 +947,14 @@ impl Protocol for ProtocolMQTT{
             .collect();
         let mut timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
         // Iteramos sobre la data y obtenemos cada valor de sonido
-        for value in raw_data.iter(){
-            // Sacamos el valor como f32
-            debug!("Insertando sonido {}...", value);
-            let value = (*value).parse::<i32>().unwrap() as f32;
-            device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "DDE0", None, conn);
-
-            timestamp += chrono::Duration::seconds(10i64);
-        };
+        // for value in raw_data.iter(){
+        //     // Sacamos el valor como f32
+        //     debug!("Insertando sonido {}...", value);
+        //     let value = (*value).parse::<i32>().unwrap() as f32;
+        //     device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "DDE0", None, conn);
+        //
+        //     timestamp += chrono::Duration::seconds(10i64);
+        // };
         (None, MessageMode::ModeLogResponse, "Log de sonido".to_string(), None)
     }
 
@@ -970,7 +990,7 @@ impl Protocol for ProtocolMQTT{
             .map(|x| str_to_int(*x, 16).to_string())
             .collect();
         let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-        device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "DDE2", Some(description), conn);
+        // device.insert_into_logs(var.base_var_id, &timestamp, value, device.cycle_id, "DDE2", Some(description), conn);
         (None, MessageMode::ModeLogResponse, "Log dosis x sonido".to_string(), Some(placeholder))
     }
 
@@ -1123,15 +1143,16 @@ pub fn process_packet(payload: &str, topic: String, pool: Pool<PostgresConnectio
     if let Some(dd) = option_device{
         // Sacamos el protocolo
         let protocol_name = dd.protocol.as_str();
-        if protocol_name == "protocol.mqtt"{
+        if protocol_name == "protocol.mqtt" {
             ProtocolMQTT.process_packet(&dd, &payload_sp, &mut conn);
-        }else if protocol_name == "protocol.uc"{
-            let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
-            ProtocolUC.process_packet(&dd, &variable_payload, &mut conn);
-        }else if protocol_name == "protocol.x2"{
-            let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
-            ProtocolX2.process_packet(&dd, &variable_payload, &mut conn);
         }
+        // }else if protocol_name == "protocol.uc"{
+        //     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
+        //     ProtocolUC.process_packet(&dd, &variable_payload, &mut conn);
+        // }else if protocol_name == "protocol.x2"{
+        //     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
+        //     ProtocolX2.process_packet(&dd, &variable_payload, &mut conn);
+        // }
         dd.update_communication(&mut conn);
     }
 }

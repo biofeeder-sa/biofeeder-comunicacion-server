@@ -43,13 +43,12 @@ pub struct Device{
     pub name: String,
     pub address: String,
     pub protocol: String,
-    pub cycle_id: Option<i32>,
     pub pond_name: Option<String>,
     pub farm_id: Option<i32>,
     pub status: Option<String>
 }
 
-type Shrimp = (Option<i32>, Option<String>, Option<i32>);
+type Shrimp = (Option<String>, Option<i32>);
 
 impl Device{
     /// Create a new device object
@@ -60,9 +59,8 @@ impl Device{
             name,
             address,
             protocol,
-            cycle_id: shrimps.0,
-            pond_name: shrimps.1,
-            farm_id: shrimps.2,
+            pond_name: shrimps.0,
+            farm_id: shrimps.1,
             status
         }
     }
@@ -151,11 +149,11 @@ impl Device{
         let val = value.parse::<f32>();
         let statement = conn.prepare("SELECT * FROM base_var_fetch WHERE device_id=$1 and base_var_id=$2").unwrap();
         let result = conn.query(&statement, &[&self.id, &var.base_var_id]);
-        if let Ok(result) = result{
-            if !result.is_empty() {
-                self.insert_into_logs(var.base_var_id, &now, val.unwrap(), self.cycle_id, var.name.as_str(), None, conn);
-            }
-        }
+        // if let Ok(result) = result{
+        //     if !result.is_empty() {
+        //         self.insert_into_logs(var.base_var_id, &now, val.unwrap(), self.cycle_id, var.name.as_str(), None, conn);
+        //     }
+        // }
 
     }
 
@@ -275,7 +273,6 @@ impl Device{
                             row.get(3),
                             self.protocol.clone(),
                             (None,
-                            None,
                             row.get(4)) as Shrimp,
                             None
                         )
@@ -310,7 +307,6 @@ impl Device{
                             row.get(3),
                             self.protocol.clone(),
                             (None,
-                            None,
                             row.get(4)) as Shrimp,
                             None
                         )
@@ -347,7 +343,6 @@ impl Device{
                             row.get(3),
                             self.protocol.clone(),
                             (None,
-                            None,
                             row.get(4)) as Shrimp,
                             None
                         )
@@ -483,7 +478,7 @@ impl Device{
     }
 
     pub fn update_status(&self, status: &str, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
-        let result = conn.execute("UPDATE set status=$1, responded_message_counter=responded_message_counter+1 where id=$2", &[&status, &self.id]);
+        let result = conn.execute("UPDATE device set status=$1, responded_message_counter=responded_message_counter+1 where id=$2", &[&status, &self.id]);
         match result {
             Ok(_r) => debug!("Status actualizado"),
             Err(r) => info!("Error al actualizar estado {}: {}", self.address, r)
@@ -532,7 +527,7 @@ impl Device{
 
 /// Returns a device (if exists), for this case should be an UC device
 pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<Option<Device>, Error>{
-    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.cycle, sp.name, sf.id, d.status \
+    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status \
     from device d \
     inner join protocol p on p.id=d.protocol_id \
     inner join shrimps_pond sp on sp.id=d.pond_id \
@@ -544,8 +539,8 @@ pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectio
         // Creamos el dispositivo encontrado
         let device = Device::new(result.get(0), result.get(1),
                                  result.get(2), result.get(3), result.get(4),
-                                 (result.get(5), result.get(6), result.get(7)) as Shrimp,
-        result.get(8));
+                                 (result.get(5), result.get(6)) as Shrimp,
+        result.get(7));
         Ok(Some(device))
     }else{
         info!("No se encontro el dispositivo con address {}", address);
