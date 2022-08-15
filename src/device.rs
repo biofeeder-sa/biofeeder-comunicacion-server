@@ -48,14 +48,15 @@ pub struct Device{
     pub pond_id: Option<i32>,
     pub pond_name: Option<String>,
     pub farm_id: Option<i32>,
-    pub status: Option<String>
+    pub status: Option<String>,
+    pub mode: Option<String>
 }
 
 type Shrimp = (Option<String>, Option<i32>);
 
 impl Device{
     /// Create a new device object
-    pub fn new(id: i32, network_id: i32, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>) -> Self{
+    pub fn new(id: i32, network_id: i32, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>) -> Self{
         Self{
             id,
             network_id,
@@ -66,6 +67,7 @@ impl Device{
             farm_id: shrimps.1,
             status,
             pond_id,
+            mode
         }
     }
 
@@ -280,6 +282,7 @@ impl Device{
                             row.get(4)) as Shrimp,
                             None,
                             None,
+                            None
                         )
                     );
                 };
@@ -315,6 +318,7 @@ impl Device{
                             row.get(4)) as Shrimp,
                             None,
                             None,
+                            None
                         )
                     );
                 };
@@ -352,6 +356,7 @@ impl Device{
                             row.get(4)) as Shrimp,
                             None,
                             None,
+                            None
                         )
                     );
                 };
@@ -534,7 +539,7 @@ impl Device{
 
 /// Returns a device (if exists), for this case should be an UC device
 pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<Option<Device>, Error>{
-    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id \
+    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id, d.mode \
     from device d \
     inner join protocol p on p.id=d.protocol_id \
     inner join shrimps_pond sp on sp.id=d.pond_id \
@@ -547,7 +552,7 @@ pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectio
         let device = Device::new(result.get(0), result.get(1),
                                  result.get(2), result.get(3), result.get(4),
                                  (result.get(5), result.get(6)) as Shrimp,
-        result.get(7), result.get(8));
+        result.get(7), result.get(8), result.get(9));
         Ok(Some(device))
     }else{
         info!("No se encontro el dispositivo con address {}", address);

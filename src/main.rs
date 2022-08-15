@@ -5,6 +5,7 @@ mod protocols;
 mod db;
 mod device;
 mod vars;
+mod message;
 
 use log::{info, LevelFilter};
 use communication::MqttClient;

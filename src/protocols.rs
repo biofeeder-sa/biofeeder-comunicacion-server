@@ -932,15 +932,17 @@ impl Protocol for ProtocolMQTT{
 
         let start = now - chrono::Duration::hours(5i64);
         let start_date = start - chrono::Duration::hours(start.hour() as i64) + chrono::Duration::hours(5i64) - chrono::Duration::minutes(start.minute() as i64) - chrono::Duration::seconds(start.second() as i64);
-        let hydrophone_analysis = device.get_or_create_hydro_now(start_date, now, conn);
-        match hydrophone_analysis{
-            Ok(hydro) => {
-                let sound_data = &data[9..];
-                let sound_a = sound_data[2];
-                let sound_b = sound_data[sound_data.len() - 3];
-                hydro.create_lines(sound_a, sound_b, now, conn);
-            },
-            Err(r) => info!("Error al crear hydrophone line {}", r)
+        if device.mode == Some("hydro".to_string()) {
+            let hydrophone_analysis = device.get_or_create_hydro_now(start_date, now, conn);
+            match hydrophone_analysis {
+                Ok(hydro) => {
+                    let sound_data = &data[9..];
+                    let sound_a = sound_data[2];
+                    let sound_b = sound_data[sound_data.len() - 3];
+                    hydro.create_lines(sound_a, sound_b, now, conn);
+                },
+                Err(r) => info!("Error al crear hydrophone line {}", r)
+            }
         }
         // Obtenemos la variable indicador de duracion de sonido
         let real_date: Vec<String> = date
