@@ -490,7 +490,7 @@ impl Device{
     }
 
     pub fn update_status(&self, status: &str, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
-        let result = conn.execute("UPDATE device set status=$1, responded_message_counter=responded_message_counter+1 where id=$2", &[&status, &self.id]);
+        let result = conn.execute("UPDATE device set status=$1, responded_message_counter=responded_message_counter+1, status_hidden='ok' where id=$2", &[&status, &self.id]);
         match result {
             Ok(_r) => debug!("Status actualizado"),
             Err(r) => info!("Error al actualizar estado {}: {}", self.address, r)

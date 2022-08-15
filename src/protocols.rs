@@ -1112,7 +1112,7 @@ impl Protocol for ProtocolMQTT{
     fn ping_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
         if let Some(status) = device.status.as_ref(){
             match status.as_str(){
-                "waiting" => device.update_status("intermitente", conn),
+                "ok" => device.update_status("intermitente", conn),
                 "lost" => device.update_status("intermitente", conn),
                 "intermitente" => device.update_status("ok", conn),
                 _ => ()
