@@ -1128,35 +1128,41 @@ pub fn process_packet(payload: &str, topic: String, pool: Pool<PostgresConnectio
     info!("Message arrived: Topic {} -> {}", topic, payload);
     let topic_sp: Vec<&str> = topic.split('/').collect();
     let address: String;
-    let mut conn = pool.get().unwrap();
-    let payload_sp: Vec<&str> = payload.split(' ').collect();
-    if topic_sp[1] == "x2"{
-        address = payload_sp[4..12].join("");
-    }else if topic_sp[1] == "uc"{
-        address = topic_sp[3].to_string();
-    }else{
-        process::exit(1);
+    let mut conn = pool.get();
+    match conn {
+        Ok(mut conn) => {
+            let payload_sp: Vec<&str> = payload.split(' ').collect();
+            if topic_sp[1] == "x2" {
+                address = payload_sp[4..12].join("");
+            } else if topic_sp[1] == "uc" {
+                address = topic_sp[3].to_string();
+            } else {
+                process::exit(1);
+            }
+
+            // Obtenemos el dispositivo segun la mac address recibida
+            let option_device = get_device(address, &mut conn).unwrap_or_else(|err| {
+                info!("Error {}", err);
+                None
+            });
+
+            if let Some(dd) = option_device {
+                // Sacamos el protocolo
+                let protocol_name = dd.protocol.as_str();
+                if protocol_name == "protocol.mqtt" {
+                    ProtocolMQTT.process_packet(&dd, &payload_sp, &mut conn);
+                }
+                // }else if protocol_name == "protocol.uc"{
+                //     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
+                //     ProtocolUC.process_packet(&dd, &variable_payload, &mut conn);
+                // }else if protocol_name == "protocol.x2"{
+                //     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
+                //     ProtocolX2.process_packet(&dd, &variable_payload, &mut conn);
+                // }
+                dd.update_communication(&mut conn);
+            }
+        },
+        Err(e) => info!("No pude sacar otra conexion a la bd {}", e)
     }
 
-    // Obtenemos el dispositivo segun la mac address recibida
-    let option_device = get_device(address, &mut conn).unwrap_or_else(|err|{
-        info!("Error {}", err);
-        None
-    });
-
-    if let Some(dd) = option_device{
-        // Sacamos el protocolo
-        let protocol_name = dd.protocol.as_str();
-        if protocol_name == "protocol.mqtt" {
-            ProtocolMQTT.process_packet(&dd, &payload_sp, &mut conn);
-        }
-        // }else if protocol_name == "protocol.uc"{
-        //     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
-        //     ProtocolUC.process_packet(&dd, &variable_payload, &mut conn);
-        // }else if protocol_name == "protocol.x2"{
-        //     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
-        //     ProtocolX2.process_packet(&dd, &variable_payload, &mut conn);
-        // }
-        dd.update_communication(&mut conn);
-    }
 }

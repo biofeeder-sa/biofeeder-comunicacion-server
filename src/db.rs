@@ -19,7 +19,7 @@ fn get_conn(dbname: &str, host: &str, db_user: &str, password: &str, db_port: &s
         NoTls,
     );
 
-    let pool = r2d2::Pool::new(manager);
+    let pool = Pool::new(manager);
 
     match pool{
         Ok(connection) => Some(connection),
