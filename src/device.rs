@@ -541,9 +541,9 @@ impl Device{
 pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<Option<Device>, Error>{
     let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id, d.mode \
     from device d \
-    inner join protocol p on p.id=d.protocol_id \
-    inner join shrimps_pond sp on sp.id=d.pond_id \
-    inner join shrimps_farm sf on sf.id=sp.farm_id
+    left join protocol p on p.id=d.protocol_id \
+    left join shrimps_pond sp on sp.id=d.pond_id \
+    left join shrimps_farm sf on sf.id=sp.farm_id
     where address=$1", &[&address])?;
     if result.len() == 1 {
         debug!("Se encontro el dispositivo con address {}", address);
