@@ -41,7 +41,7 @@ impl HydrophoneAnalysis{
 /// Struct of a device
 pub struct Device{
     pub id: i32,
-    pub network_id: i32,
+    pub network_id: Option<i32>,
     pub name: String,
     pub address: String,
     pub protocol: String,
@@ -56,7 +56,7 @@ type Shrimp = (Option<String>, Option<i32>);
 
 impl Device{
     /// Create a new device object
-    pub fn new(id: i32, network_id: i32, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>) -> Self{
+    pub fn new(id: i32, network_id: Option<i32>, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>) -> Self{
         Self{
             id,
             network_id,
