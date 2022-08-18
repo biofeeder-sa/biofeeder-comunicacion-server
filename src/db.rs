@@ -6,6 +6,7 @@ use native_tls::{Certificate, TlsConnector};
 use r2d2_postgres::PostgresConnectionManager;
 use r2d2::Pool;
 use std::fs;
+use chrono;
 use postgres::NoTls;
 
 /// Connect to database an return an optional connection
@@ -19,7 +20,9 @@ fn get_conn(dbname: &str, host: &str, db_user: &str, password: &str, db_port: &s
         NoTls,
     );
 
-    let pool = Pool::new(manager);
+    let pool = Pool::builder()
+        .max_size(200)
+        .build(manager);
 
     match pool{
         Ok(connection) => Some(connection),
