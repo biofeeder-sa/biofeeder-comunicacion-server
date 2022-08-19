@@ -476,18 +476,18 @@ impl Device{
     }
 
     /// Delete alarms when a device stop send it
-    pub fn clean_alarms(&self, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
-        let create_date = chrono::Utc::now() - chrono::Duration::minutes(3);
-        let has_active_alarm = conn.query("SELECT id from alarm_alarm where timestamp >= $1 and device_id=$2 and active=true limit 1",
-                                          &[&create_date.naive_utc(), &self.id]);
-        if let Ok(result) = has_active_alarm{
-            if result.is_empty(){
-                info!("Eliminando alarmas para {}", self.name);
-                conn.execute("DELETE FROM alarm_alarm where device_id=$1", &[&self.id]);
-            }
-        }
-        conn.execute("DELETE FROM alarm_pre_alarm where device_id=$1", &[&self.id]);
-    }
+    // pub fn clean_alarms(&self, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
+    //     let create_date = chrono::Utc::now() - chrono::Duration::minutes(3);
+    //     let has_active_alarm = conn.query("SELECT id from alarm_alarm where timestamp >= $1 and device_id=$2 and active=true limit 1",
+    //                                       &[&create_date.naive_utc(), &self.id]);
+    //     if let Ok(result) = has_active_alarm{
+    //         if result.is_empty(){
+    //             info!("Eliminando alarmas para {}", self.name);
+    //             conn.execute("DELETE FROM alarm_alarm where device_id=$1", &[&self.id]);
+    //         }
+    //     }
+    //     conn.execute("DELETE FROM alarm_pre_alarm where device_id=$1", &[&self.id]);
+    // }
 
     pub fn update_status(&self, status: &str, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
         let result = conn.execute("UPDATE device set status=$1, responded_message_counter=responded_message_counter+1, status_hidden='ok' where id=$2", &[&status, &self.id]);
@@ -583,10 +583,18 @@ pub fn bulk_clean_alarms(devices: &Vec<i32>, parent_device: Option<i32>, conn: &
         .map(|x| x.to_string())
         .collect();
 
-    let now = chrono::Utc::now();
-    let now = now.naive_utc();
-    let query = format!("DELETE FROM alarm_alarm where device_id in ({})", devices_str.join(","));
+    let create_date = chrono::Utc::now() - chrono::Duration::minutes(3);
+    let create_date = create_date.naive_utc();
+    let query = format!("DELETE FROM alarm_alarm where device_id in ({}) and timestamp <= '{}' \
+        and active=true", devices_str.join(","), create_date);
     let result = conn.batch_execute(&query);
+    let alarm_query = conn.prepare("SELECT * from alarm_alarm where \
+        device_id=$1 and active = true and bit_position=$2 limit 1",).unwrap();
+    let bat_alarm_dev_update = conn.prepare("UPDATE device set \
+        battery_alarm=$1 where id=$2").unwrap();
+    let motor_alarm_dev_update = conn.prepare("UPDATE device set \
+        motor_alarm=$1 where id=$2").unwrap();
+
     match result{
         Ok(_r) => debug!("Alarm alarm eliminados"),
         Err(r) => info!("Error al bulk alarm_alarm {}", r)
@@ -597,6 +605,32 @@ pub fn bulk_clean_alarms(devices: &Vec<i32>, parent_device: Option<i32>, conn: &
         match result {
             Ok(_r) => debug!("Alarm pre alarm eliminados"),
             Err(r) => info!("Error al bulk alarm_pre {}", r)
+        }
+    }
+    // check alarms for each device
+    for dev in devices_str{
+        let dev_id = dev.parse::<i32>().unwrap();
+        // battery
+        let has_active_bat_alarm = conn.query(&alarm_query,&[&dev_id, &20]);
+        if let Ok(bat_active_alarm_result) = has_active_bat_alarm {
+            if bat_active_alarm_result.is_empty(){
+                conn.execute(&bat_alarm_dev_update, &[&false, &dev_id]);
+            }
+            else{
+                conn.execute(&bat_alarm_dev_update, &[&true, &dev_id]);
+            }
+            info!("Editando alarma de batería para {}", dev);
+        }
+        // motor
+        let has_active_motor_alarm = conn.query(&alarm_query,&[&dev_id, &1]);
+        if let Ok(motor_active_alarm_result) = has_active_motor_alarm {
+            if motor_active_alarm_result.is_empty(){
+                conn.execute(&motor_alarm_dev_update, &[&false, &dev_id]);
+            }
+            else {
+                conn.execute(&motor_alarm_dev_update, &[&true, &dev_id]);
+            }
+            info!("Editando alarma de motor para {}", dev);
         }
     }
 }
