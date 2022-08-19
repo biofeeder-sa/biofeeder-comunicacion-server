@@ -41,7 +41,7 @@ impl HydrophoneAnalysis{
 /// Struct of a device
 pub struct Device{
     pub id: i32,
-    pub network_id: i32,
+    pub network_id: Option<i32>,
     pub name: String,
     pub address: String,
     pub protocol: String,
@@ -56,7 +56,7 @@ type Shrimp = (Option<String>, Option<i32>);
 
 impl Device{
     /// Create a new device object
-    pub fn new(id: i32, network_id: i32, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>) -> Self{
+    pub fn new(id: i32, network_id: Option<i32>, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>) -> Self{
         Self{
             id,
             network_id,
@@ -541,9 +541,9 @@ impl Device{
 pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<Option<Device>, Error>{
     let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id, d.mode \
     from device d \
-    inner join protocol p on p.id=d.protocol_id \
-    inner join shrimps_pond sp on sp.id=d.pond_id \
-    inner join shrimps_farm sf on sf.id=sp.farm_id
+    left join protocol p on p.id=d.protocol_id \
+    left join shrimps_pond sp on sp.id=d.pond_id \
+    left join shrimps_farm sf on sf.id=sp.farm_id
     where address=$1", &[&address])?;
     if result.len() == 1 {
         debug!("Se encontro el dispositivo con address {}", address);
