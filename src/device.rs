@@ -1,6 +1,7 @@
 use chrono::{NaiveDate, NaiveDateTime};
 use std::collections::HashMap;
 use std::fmt::format;
+use std::ptr::null;
 use log::{debug, error, info};
 use r2d2_postgres::PostgresConnectionManager;
 use r2d2::{Pool, PooledConnection};
@@ -105,8 +106,15 @@ impl Device{
             }
         };
 
-        let result = conn.query("UPDATE device set hopper_status=$1 where id=$2",
-                                &[&st, &self.id]);
+        // set as empty alarm
+        let empty_alarm = match st {
+            "empty" => true,
+            "full" => false,
+            &_ => false
+        };
+
+        let result = conn.query("UPDATE device set hopper_status=$1, empty_alarm=$2 where id=$3",
+                                &[&st, &empty_alarm, &self.id]);
         match result{
             Ok(_response) => {
                 debug!("Hopper status actualizado");
@@ -390,14 +398,28 @@ impl Device{
         let battery = battery.unwrap_or(0.0).to_string();
         let panel = panel.unwrap_or(0.0).to_string();
         let temperature = temperature.unwrap_or(0).to_string();
+        let signal_float = -signal as f64;
+        let mut signal_alarm= false;
         let signal = signal.to_string();
         let statement = conn.prepare("INSERT INTO device_log_status(create_date, device_id, timestamp, temp, signal, status_v_1, status_v_2) VALUES($1, $2, $3, $4, $5, $6, $7)").unwrap();
         let result = conn.execute(&statement,
         &[&create_date.naive_utc(), &self.id, &timestamp, &temperature, &signal, &battery, &panel]);
+        let dev_statement = conn.prepare("UPDATE device set signal_alarm=$1, last_signal=$2 where id=$3").unwrap();
         match result{
             Ok(_response) => debug!("Status log guardado con exito"),
             Err(e) => info!("Error al guardar log {}", e)
         };
+        // update signal alarm and value
+        if signal_float <= -80.00 as f64 {
+            signal_alarm = true;
+        }
+        let dev_result = conn.execute(&dev_statement,
+                                      &[&signal_alarm, &signal_float, &self.id]);
+        match dev_result {
+            Ok(_response) => debug!("Signal actualizado con exito"),
+            Err(e) => info!("Error al actualizar signal {}", e)
+        }
+
     }
 
     pub fn get_or_create_hydro_now(&self, date: NaiveDateTime, now: NaiveDateTime, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<HydrophoneAnalysis, Error>{
