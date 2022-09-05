@@ -56,14 +56,15 @@ pub struct Device {
     pub pond_name: Option<String>,
     pub farm_id: Option<i32>,
     pub status: Option<String>,
-    pub mode: Option<String>
+    pub mode: Option<String>,
+    pub empty_alarm: bool,
 }
 
 type Shrimp = (Option<String>, Option<i32>);
 
 impl Device {
     /// Create a new device object
-    pub fn new(id: i32, network_id: Option<i32>, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>) -> Self {
+    pub fn new(id: i32, network_id: Option<i32>, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>, empty_alarm: bool) -> Self {
         Self {
             id,
             network_id,
@@ -74,7 +75,8 @@ impl Device {
             farm_id: shrimps.1,
             status,
             pond_id,
-            mode
+            mode,
+            empty_alarm
         }
     }
 
@@ -119,8 +121,28 @@ impl Device {
             &_ => false
         };
 
+        let mut change_status: bool = false;
+        let mut change_field: &str = "first_change_status_timestamp";
+        if !self.empty_alarm && empty_alarm{
+            // device was full and now is empty
+            change_status = true;
+            change_field = "first_change_status_timestamp";
+        }
+
+        if self.empty_alarm && !empty_alarm{
+            // device was empty and now is full
+            change_status = true;
+            change_field = "first_change_full_status_timestamp";
+        }
+
+        if change_status{
+            let query = format!("UPDATE device set {change_field}=$1 where id=$2");
+            let change_result = conn.execute(&query, &[&create_date.naive_utc(), &self.id]);
+        }
+
         let result = conn.query("UPDATE device set hopper_status=$1, empty_alarm=$2 where id=$3",
                                 &[&st, &empty_alarm, &self.id]);
+
         let device_alarm_history = create_or_update_device_alarm_history(Some(self.id),
                                                                              "empty_alarm".to_string(),
                                                                         empty_alarm, conn);
@@ -298,7 +320,8 @@ impl Device {
                              row.get(4)) as Shrimp,
                             None,
                             None,
-                            None
+                            None,
+                            false,
                         )
                     );
                 };
@@ -310,7 +333,7 @@ impl Device {
 
     pub fn get_feeders(&self, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Option<Vec<Device>> {
         let mut device_vec: Vec<Device> = Vec::new();
-        let statement = conn.prepare("SELECT d.id, network_id, d.name, address, n.farm_id \
+        let statement = conn.prepare("SELECT d.id, network_id, d.name, address, n.farm_id, d.empty_alarm \
     from device d inner join network n on n.id=d.network_id inner join profile p on p.id=d.profile_id \
     where uc_assigned_id=$1 and p.profile_type='feeder' order by address asc").unwrap();
         let result = conn.query(&statement, &[&self.id]);
@@ -334,7 +357,8 @@ impl Device {
                              row.get(4)) as Shrimp,
                             None,
                             None,
-                            None
+                            None,
+                            row.get(5),
                         )
                     );
                 };
@@ -372,7 +396,8 @@ impl Device {
                              row.get(4)) as Shrimp,
                             None,
                             None,
-                            None
+                            None,
+                            false,
                         )
                     );
                 };
@@ -572,7 +597,7 @@ impl Device {
 
 /// Returns a device (if exists), for this case should be an UC device
 pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<Option<Device>, Error> {
-    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id, d.mode \
+    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id, d.mode, d.empty_alarm \
 from device d \
 left join protocol p on p.id=d.protocol_id \
 left join shrimps_pond sp on sp.id=d.pond_id \
@@ -585,7 +610,7 @@ where address=$1", &[&address])?;
         let device = Device::new(result.get(0), result.get(1),
                                  result.get(2), result.get(3), result.get(4),
                                  (result.get(5), result.get(6)) as Shrimp,
-                                 result.get(7), result.get(8), result.get(9));
+                                 result.get(7), result.get(8), result.get(9), result.get(10));
         Ok(Some(device))
     } else {
         info!("No se encontro el dispositivo con address {}", address);
