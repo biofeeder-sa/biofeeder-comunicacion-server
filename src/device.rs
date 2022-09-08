@@ -57,14 +57,14 @@ pub struct Device {
     pub farm_id: Option<i32>,
     pub status: Option<String>,
     pub mode: Option<String>,
-    pub empty_alarm: bool,
+    pub empty_alarm: Option<bool>,
 }
 
 type Shrimp = (Option<String>, Option<i32>);
 
 impl Device {
     /// Create a new device object
-    pub fn new(id: i32, network_id: Option<i32>, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>, empty_alarm: bool) -> Self {
+    pub fn new(id: i32, network_id: Option<i32>, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>, empty_alarm: Option<bool>) -> Self {
         Self {
             id,
             network_id,
@@ -123,13 +123,17 @@ impl Device {
 
         let mut change_status: bool = false;
         let mut change_field: &str = "first_change_status_timestamp";
-        if !self.empty_alarm && empty_alarm{
+        let empty_alarm_device = match self.empty_alarm{
+            Some(alarm) => alarm,
+            _ => false
+        };
+        if !empty_alarm_device && empty_alarm{
             // device was full and now is empty
             change_status = true;
             change_field = "first_change_status_timestamp";
         }
 
-        if self.empty_alarm && !empty_alarm{
+        if empty_alarm_device && !empty_alarm{
             // device was empty and now is full
             change_status = true;
             change_field = "first_change_full_status_timestamp";
@@ -321,7 +325,7 @@ impl Device {
                             None,
                             None,
                             None,
-                            false,
+                            Some(false),
                         )
                     );
                 };
@@ -397,7 +401,7 @@ impl Device {
                             None,
                             None,
                             None,
-                            false,
+                            Some(false),
                         )
                     );
                 };
