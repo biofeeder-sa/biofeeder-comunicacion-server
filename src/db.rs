@@ -21,7 +21,8 @@ fn get_conn(dbname: &str, host: &str, db_user: &str, password: &str, db_port: &s
     );
 
     let pool = Pool::builder()
-        .max_size(600)
+        .min_idle(Some(10))
+        .max_size(500)
         .build(manager);
 
     match pool{
