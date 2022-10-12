@@ -79,7 +79,7 @@ impl MqttClient{
         // Creamos las opciones para el client MQTT
         let opts = CreateOptionsBuilder::new()
             .server_uri(BROKER)
-            .client_id("server_biomatic".to_owned() + db_name)
+            .client_id("server_biomatic_aws".to_owned() + db_name)
             .user_data(Box::new(RwLock::new(pool)))
             .finalize();
 
