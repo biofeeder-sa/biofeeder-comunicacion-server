@@ -1042,12 +1042,12 @@ impl Protocol for ProtocolMQTT{
             }
             let child = &children[device_position];
 
-            let battery_var = child.get_variable("0D8D", conn);
+            let battery_var = child.get_variable("0D86", conn);
             if let Some(bv) = battery_var{
                 battery = bv.decode(data[8..12].join(" ").as_str()).parse::<f32>().unwrap();
             }
 
-            let panel_var = child.get_variable("0D86", conn);
+            let panel_var = child.get_variable("0D8D", conn);
             if let Some(bv) = panel_var{
                 panel = bv.decode(data[12..=15].join(" ").as_str()).parse::<f32>().unwrap();
             }
