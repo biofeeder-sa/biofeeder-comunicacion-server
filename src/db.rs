@@ -1,11 +1,10 @@
-use std::process;
+use std::{process, fs, time};
 use configparser::ini::Ini;
 use log::{error, info};
 use postgres::config::SslMode;
 use native_tls::{Certificate, TlsConnector};
 use r2d2_postgres::PostgresConnectionManager;
 use r2d2::Pool;
-use std::fs;
 use chrono;
 use postgres::NoTls;
 
@@ -22,7 +21,8 @@ fn get_conn(dbname: &str, host: &str, db_user: &str, password: &str, db_port: &s
 
     let pool = Pool::builder()
         .min_idle(Some(10))
-        .max_size(500)
+        .max_lifetime(Some(time::Duration::from_secs(300)))
+        .max_size(1800)
         .build(manager);
 
     match pool{
