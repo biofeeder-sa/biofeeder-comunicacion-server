@@ -160,9 +160,9 @@ impl Device {
         };
     }
 
-    pub fn update_rssi_timestamp(&self, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>, timestamp: &NaiveDateTime) {
-        let statement = conn.prepare("UPDATE device set last_signal_date=$1 where id=$2").unwrap();
-        let result = conn.execute(&statement, &[&timestamp, &self.id]);
+    pub fn update_rssi_battery_timestamp(&self, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>, timestamp: &NaiveDateTime, battery_info: String) {
+        let statement = conn.prepare("UPDATE device set last_signal_date=$1, battery_level=$3 where id=$2").unwrap();
+        let result = conn.execute(&statement, &[&timestamp, &self.id, &battery_info]);
         match result {
             Ok(_response) => {
                 debug!("Last signal actualizado");

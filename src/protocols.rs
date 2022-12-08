@@ -1052,6 +1052,7 @@ impl Protocol for ProtocolMQTT{
                 panel = bv.decode(data[12..=15].join(" ").as_str()).parse::<f32>().unwrap();
             }
 
+            let battery_info = format!("{} at {}", battery, timestamp);
             placeholder.insert("Dispositivo".to_string(), child.name.clone());
             placeholder.insert("Senal".to_string(), signal.to_string());
             placeholder.insert("Bateria".to_string(), battery.to_string());
@@ -1063,7 +1064,7 @@ impl Protocol for ProtocolMQTT{
                 // Actualizamos la variable RSSI
                 var.update(&signal.to_string(), conn);
             }
-            child.update_rssi_timestamp(conn, &timestamp);
+            child.update_rssi_battery_timestamp(conn, &timestamp, battery_info);
             child.insert_status_log(&timestamp, None, signal, Some(battery), Some(panel), conn);
         }
 
