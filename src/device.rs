@@ -432,9 +432,9 @@ impl Device {
     pub fn insert_status_log(&self, timestamp: &NaiveDateTime, temperature: Option<i32>, signal: i32, battery: Option<f32>, panel: Option<f32>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
         info!("Insertando status logs para {}", self.name);
         let create_date = chrono::Utc::now();
-        let battery = battery.unwrap_or(0.0);
-        let panel = panel.unwrap_or(0.0);
-        let temperature = temperature.unwrap_or(0) as f32;
+        let battery = battery.unwrap_or(0.0) as f64;
+        let panel = panel.unwrap_or(0.0) as f64;
+        let temperature = temperature.unwrap_or(0) as f64;
         let signal_float = -signal as f64;
         let mut signal_alarm = false;
         let signal = signal.to_string();
