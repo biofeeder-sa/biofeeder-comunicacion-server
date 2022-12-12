@@ -440,7 +440,7 @@ impl Device {
         let signal = signal.to_string();
         let statement = conn.prepare("INSERT INTO device_log_status(create_date, device_id, timestamp, temp, signal, status_v_1, status_v_2) VALUES($1, $2, $3, $4, $5, $6, $7)").unwrap();
         let result = conn.execute(&statement,
-                                  &[&create_date.naive_utc(), &self.id, &timestamp, &temperature, &signal, &battery, &panel]);
+                                  &[&create_date.naive_utc(), &self.id, &timestamp, &temperature, &signal_float, &battery, &panel]);
         let dev_statement = conn.prepare("UPDATE device set signal_alarm=$1, last_signal=$2 where id=$3").unwrap();
         match result {
             Ok(_response) => debug!("Status log guardado con exito"),
