@@ -434,7 +434,7 @@ impl Device {
         let create_date = chrono::Utc::now();
         let battery = battery.unwrap_or(0.0);
         let panel = panel.unwrap_or(0.0);
-        let temperature = temperature.unwrap_or(0);
+        let temperature = temperature.unwrap_or(0) as f32;
         let signal_float = -signal as f64;
         let mut signal_alarm = false;
         let signal = signal.to_string();
