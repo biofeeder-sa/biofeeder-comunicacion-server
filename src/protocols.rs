@@ -30,9 +30,9 @@ pub trait Protocol{
         }
 
         match command {
-            // "23" => self.read_response_function(device, &mut real_data, conn),
+            "23" => self.read_response_function(device, &mut real_data, conn),
             "30" => self.feed_log_function(device, &real_data, conn),
-            // "31" => self.read_response_vars_other_function(device, &real_data, conn),
+            "31" => self.read_response_vars_other_function(device, &real_data, conn),
             // "32" => self.write_response_vars_other_function(device, &real_data, conn),
             // "33" => self.feed_log_confirmation_function(device, &real_data, conn),
             // "37" => self.log_accumulation_day_function(device, &real_data, conn),
@@ -338,100 +338,131 @@ impl Protocol for ProtocolX2{
 /// Struct for communication through a UC 1.0
 struct ProtocolUC;
 
-// impl Protocol for ProtocolUC{
-//     fn log_recovery_function(&self, _device: &Device, _data: &Vec<&str>, _conn: &mut  PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
-//         todo!()
-//     }
-//
-//     /// Save rssi logs into database
-//     fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn: &mut  PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-//         // Obtenemos todos los hijos de esa UC
-//         let devices = device.get_children_devices(conn);
-//         let mut placeholder: Option<HashMap<String, String>> = None;
-//
-//         // Si existe algun hijo(alimentador)
-//         if let Some(d) = devices{
-//             let mut hash_tooltip: HashMap<String, String> = HashMap::new();
-//             let data_len: usize = data.len();
-//             let now = chrono::Utc::now();
-//             let now = now.naive_utc();
-//             // let now = now.to_string();
-//
-//             // Iteramos sobre los datos
-//             // En esta trama llegan para todos los alimentadores
-//             for i in 0..data_len{
-//                 // Segun la posicion sacamos el alimentador asociado
-//                 let device_id = &d[i];
-//
-//                 // Obtenemos el valor para ese alimentador
-//                 let val = i32::from_str_radix(data[i], 16).unwrap() as f32;
-//                 let var_id = device_id.get_variable("4442", conn);
-//                 if let Some(var) = var_id{
-//
-//                     // Actualizamos la variable RSSI
-//                     var.update(&val.to_string(), conn);
-//                     hash_tooltip.insert(device_id.name.to_string(), val.to_string());
-//
-//                     // Insertamos el log en la base de datos
-//                     device_id.insert_into_logs(var.base_var_id, &now, val, device.cycle_id, "4442", None, conn);
-//                 }
-//             }
-//             if !hash_tooltip.is_empty(){
-//                 placeholder = Some(hash_tooltip);
-//             }
-//         }
-//         (None, MessageMode::ModeLogResponse, "Log RSSI".to_string(), placeholder)
-//
-//     }
-//
-//     /// Parse a read response from feeders
-//     fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-//         // Sacamos la posicion del alimentador que respondio
-//         let position = str_to_int(data[0], 16);
-//
-//         // Tamano de la trama
-//         let variables_len = str_to_int(data[1], 16);
-//
-//         // Los datos que deben ser procesados, esto es, quitar la posicion y el tamano de la trama
-//         let mut raw_data = data[2..data.len()].to_vec();
-//         let mut placeholder: HashMap<String, String> = HashMap::new();
-//
-//         // El codigo va a cambiar
-//         let mut code: String;
-//
-//         // Todos los alimentadores asociados a esta UC
-//         let op_children = device.get_children_devices(conn);
-//         if let Some(children) = op_children{
-//             // Obtenemos el alimentador
-//             let child = &children[position as usize];
-//             let mut var: Option<Var>;
-//             let mut len_data_var = 0;
-//             let mut devices_vec: Vec<i32> = Vec::new();
-//             // Iteramos sobre las variables respondidas
-//             for _i in 0..variables_len {
-//
-//                 // El codigo de la variable
-//                 code = raw_data[..2].join("");
-//                 var = child.get_variable(code.as_str(), conn);
-//                 devices_vec.push(child.id);
-//                 // child.update_communication(conn);
-//                 if let Some(v) = var{
-//                     len_data_var = v.size as usize;
-//                     let decoded_value = v.decode(&raw_data[2..=1 + len_data_var].join(" "));
-//                     child.verify_bytes_seteo(code.as_str(), &decoded_value, conn);
-//                     child.create_logs_from_fetch(&v, &decoded_value, conn);
-//                     v.update(&decoded_value, conn);
-//                     placeholder.insert(v.name, decoded_value);
-//                 }
-//                 raw_data.drain(..=1 + len_data_var);
-//             };
-//             bulk_update_communication(&devices_vec, conn);
-//             placeholder.insert("Dispositivo".to_string(), child.name.clone());
-//         }
-//
-//         (None, MessageMode::ModeReadResponse, "Respuesta lectura alimentador".to_string(), Some(placeholder))
-//     }
-//
+impl Protocol for ProtocolUC{
+    fn log_recovery_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+     /// Parse a read response from feeders
+    fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        // Sacamos la posicion del alimentador que respondio
+        let position = str_to_int(data[0], 16);
+
+        // Tamano de la trama
+        let variables_len = str_to_int(data[1], 16);
+
+        // Los datos que deben ser procesados, esto es, quitar la posicion y el tamano de la trama
+        let mut raw_data = data[2..data.len()].to_vec();
+        let mut placeholder: HashMap<String, String> = HashMap::new();
+
+        // El codigo va a cambiar
+        let mut code: String;
+
+        // Todos los alimentadores asociados a esta UC
+        let op_children = device.get_children_devices(conn);
+        if let Some(children) = op_children{
+            // Obtenemos el alimentador
+            let child = &children[position as usize];
+            let mut var: Option<Var>;
+            let mut len_data_var = 0;
+            let mut devices_vec: Vec<i32> = Vec::new();
+            // Iteramos sobre las variables respondidas
+            for _i in 0..variables_len {
+
+                // El codigo de la variable
+                code = raw_data[..2].join("");
+                var = child.get_variable(code.as_str(), conn);
+                devices_vec.push(child.id);
+                // child.update_communication(conn);
+                if let Some(v) = var{
+                    len_data_var = v.size as usize;
+                    let decoded_value = v.decode(&raw_data[2..=1 + len_data_var].join(" "));
+                    child.verify_bytes_seteo(code.as_str(), &decoded_value, conn);
+                    child.create_logs_from_fetch(&v, &decoded_value, conn);
+                    v.update(&decoded_value, conn);
+                    placeholder.insert(v.name, decoded_value);
+                }
+                raw_data.drain(..=1 + len_data_var);
+            };
+            bulk_update_communication(&devices_vec, conn);
+            placeholder.insert("Dispositivo".to_string(), child.name.clone());
+        }
+
+        (None, MessageMode::ModeReadResponse, "Respuesta lectura alimentador".to_string(), Some(placeholder))
+    }
+
+    fn write_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_kg_hopper(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_alarms_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_accumulation_day_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_sensor_do_temp_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn feed_log_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn feed_log_confirmation_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_sound_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_sound_function_x2(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_dosage_hydro_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_status_uc_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn log_status_device_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn xbee_error_function(&self) -> ResponseCommand {
+        todo!()
+    }
+
+    fn hydrophone_error_function(&self) -> ResponseCommand {
+        todo!()
+    }
+
+    fn assign_device_response_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn mac_address_response_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
+    fn ping_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        todo!()
+    }
+
 //     /// Simple ACK is returned
 //     fn write_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
 //         let op_children = device.get_children_devices(conn);
@@ -723,11 +754,10 @@ struct ProtocolUC;
 //     fn ping_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
 //         todo!()
 //     }
-// }
+}
 
 
 struct ProtocolMQTT;
-
 
 impl Protocol for ProtocolMQTT{
 
@@ -763,8 +793,14 @@ impl Protocol for ProtocolMQTT{
         todo!()
     }
 
-    fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        todo!()
+    // fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    //     // Es igual que protocolo UC
+    //     ProtocolUC{}.rssi_function(device, data, conn)
+    // }
+    //
+    fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+        // Es igual que protocolo UC
+        ProtocolUC{}.read_response_vars_other_function(device, data, conn)
     }
 
     fn write_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
@@ -774,16 +810,6 @@ impl Protocol for ProtocolMQTT{
     fn log_kg_hopper(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
         todo!()
     }
-
-    // fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-    //     // Es igual que protocolo UC
-    //     ProtocolUC{}.rssi_function(device, data, conn)
-    // }
-    //
-    // fn read_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-    //     // Es igual que protocolo UC
-    //     ProtocolUC{}.read_response_vars_other_function(device, data, conn)
-    // }
     //
     // fn write_response_vars_other_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
     //     // Es igual que protocolo UC

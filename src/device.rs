@@ -196,8 +196,14 @@ impl Device {
         let now = chrono::Utc::now();
         let now = now.naive_utc();
         let val = value.parse::<f32>();
-        let statement = conn.prepare("SELECT * FROM base_var_fetch WHERE device_id=$1 and base_var_id=$2").unwrap();
-        let result = conn.query(&statement, &[&self.id, &var.base_var_id]);
+        let value = val.unwrap();
+        // let statement = conn.prepare("SELECT * FROM base_var_fetch WHERE device_id=$1 and base_var_id=$2").unwrap();
+        // let result = conn.query(&statement, &[&self.id, &var.base_var_id]);
+        if let Some(code) = var.code.as_ref(){
+            if code == "0D86"{
+                self.insert_status_log(&now, None, 0, Some(value), None, conn);
+            }
+        }
         // if let Ok(result) = result{
         //     if !result.is_empty() {
         //         self.insert_into_logs(var.base_var_id, &now, val.unwrap(), self.cycle_id, var.name.as_str(), None, conn);
