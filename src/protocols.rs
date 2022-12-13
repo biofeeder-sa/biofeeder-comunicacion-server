@@ -365,8 +365,10 @@ impl Protocol for ProtocolUC{
         // Todos los alimentadores asociados a esta UC
         let op_children = device.get_children_devices(conn);
         if let Some(children) = op_children{
+
             // Obtenemos el alimentador
             let child = &children[position as usize];
+            info!("Entramos a los AA {}-{}", child.name, child.address);
             let mut var: Option<Var>;
             let mut len_data_var = 0;
             let mut devices_vec: Vec<i32> = Vec::new();
@@ -379,6 +381,7 @@ impl Protocol for ProtocolUC{
                 devices_vec.push(child.id);
                 // child.update_communication(conn);
                 if let Some(v) = var{
+                    info!("Obtuvimos la var {:?}", v.code);
                     len_data_var = v.size as usize;
                     let decoded_value = v.decode(&raw_data[2..=1 + len_data_var].join(" "));
                     child.verify_bytes_seteo(code.as_str(), &decoded_value, conn);

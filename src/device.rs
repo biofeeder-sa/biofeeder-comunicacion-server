@@ -201,6 +201,7 @@ impl Device {
         // let result = conn.query(&statement, &[&self.id, &var.base_var_id]);
         if let Some(code) = var.code.as_ref(){
             if code == "0D86"{
+                info!("Si es 0D86");
                 self.insert_status_log(&now, None, 0, Some(value), None, conn);
             }
         }
