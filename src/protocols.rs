@@ -377,6 +377,7 @@ impl Protocol for ProtocolUC{
 
                 // El codigo de la variable
                 code = raw_data[..2].join("");
+                info!("La var a consultar es {:?}", code.as_str());
                 var = child.get_variable(code.as_str(), conn);
                 devices_vec.push(child.id);
                 // child.update_communication(conn);
