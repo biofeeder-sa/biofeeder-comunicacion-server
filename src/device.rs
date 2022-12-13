@@ -277,7 +277,7 @@ impl Device {
     /// None if not find any variable with that code
     pub fn get_variable(&self, code: &str, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Option<Var> {
         debug!("Obteniendo la variable {} para {}", code, self.name);
-        let statement = conn.prepare("SELECT v.id, bv.size, bv.format, bv.name, bv.id, v.value from var v \
+        let statement = conn.prepare("SELECT v.id, bv.size, bv.format, bv.name, bv.id, v.value, bv.code from var v \
     inner join base_var bv on bv.id=v.base_var_id \
     where device_id=$1 and code=$2").unwrap();
         let result = conn.query(&statement, &[&self.id, &code]);
@@ -293,7 +293,7 @@ impl Device {
                 let value: Option<String> = r.get(5);
                 let variable: Var = Var::new(r.get(0), r.get(1),
                                              r.get(2), r.get(3),
-                                             r.get(4), value.unwrap_or("".to_string()), None);
+                                             r.get(4), value.unwrap_or("".to_string()), r.get(6));
 
                 // Retornamos some variable
                 return Some(variable);
