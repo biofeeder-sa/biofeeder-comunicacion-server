@@ -454,7 +454,7 @@ impl Device {
             Err(e) => info!("Error al guardar log {}", e)
         };
         // update signal alarm and value
-        if signal_float <= -80.00 as f64 {
+        if signal_float <= -90.00 as f64 {
             signal_alarm = true;
         }
         let dev_result = conn.execute(&dev_statement,
