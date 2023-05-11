@@ -1192,14 +1192,13 @@ pub fn process_packet(payload: &str, topic: String, pool: Pool<PostgresConnectio
                 let protocol_name = dd.protocol.as_str();
                 if protocol_name == "protocol.mqtt" {
                     ProtocolMQTT.process_packet(&dd, &payload_sp, &mut conn);
+                }else if protocol_name == "protocol.uc"{
+                    let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
+                    ProtocolUC.process_packet(&dd, &variable_payload, &mut conn);
+                }else if protocol_name == "protocol.x2"{
+                    let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
+                    ProtocolX2.process_packet(&dd, &variable_payload, &mut conn);
                 }
-                // }else if protocol_name == "protocol.uc"{
-                //     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
-                //     ProtocolUC.process_packet(&dd, &variable_payload, &mut conn);
-                // }else if protocol_name == "protocol.x2"{
-                //     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
-                //     ProtocolX2.process_packet(&dd, &variable_payload, &mut conn);
-                // }
                 dd.update_communication(&mut conn);
             }
         },
