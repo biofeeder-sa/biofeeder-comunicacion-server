@@ -61,9 +61,11 @@ fn on_connect_success(cli: &AsyncClient, _msgid: u16){
     info!("Connection succeeded");
     let data = cli.user_data().unwrap();
     info!("Subscribing to topic: {}", TOPIC);
-
+    let new_topics: Vec<String> = vec!["server/uc/#".to_string(), "server/x2/#".to_string()];
+    let qos = vec![0; new_topics.len()];
     // Subscribimos al topico
-    cli.subscribe(TOPIC, 0);
+    cli.subscribe_many(&new_topics, &qos);
+    // cli.subscribe(TOPIC, 0);
 
 }
 
