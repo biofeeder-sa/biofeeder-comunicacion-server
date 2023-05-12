@@ -724,9 +724,9 @@ pub fn create_or_update_device_alarm_history(device_id: Option<i32>, alarm_type:
     let result = conn.query(&query, &[&device_id]).unwrap();
 
     // device alarm history query
-    let create_query = format!("INSERT INTO device_alarm_history(device_id, {alarm_type}, \
-                    still_alarmed, alarm_counter, last_alarmed_date, create_date) \
-                    VALUES ($1, $2, $3, $4, $5, $6)");
+    let create_query = format!("INSERT INTO device_alarm_history(device_id, farm_id, pond_id, \
+                    {alarm_type}, still_alarmed, alarm_counter, last_alarmed_date, create_date) \
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)");
     return if !result.is_empty() {
         let r = &result[0];
         let dev_alarm_history = DeviceAlarmHistory {
@@ -752,12 +752,19 @@ pub fn create_or_update_device_alarm_history(device_id: Option<i32>, alarm_type:
     } else {
         // create new record
         if alarmed {
-            let history_alarm_record_create = conn.execute(&create_query,
-                &[&device_id, &true, &true, &1, &now, &now]);
+            let result = conn.query("SELECT farm_id, pond_id FROM device where id=$1",
+                                          &[&device_id]).unwrap();
+            if !result.is_empty() {
+                let dr = &result[0];
+                let farm_id: i32 = dr.get(0);
+                let pond_id: i32 = dr.get(1);
+                let history_alarm_record_create = conn.execute(&create_query,
+                &[&device_id, &farm_id, &pond_id, &true, &true, &1, &now, &now]);
 
-            match history_alarm_record_create {
-                Ok(_r) => debug!("Creado device alarm history"),
-                Err(r) => info!("Error al crear device alarm history {}", r)
+                match history_alarm_record_create {
+                    Ok(_r) => debug!("Creado device alarm history"),
+                    Err(r) => info!("Error al crear device alarm history {}", r)
+                }
             }
         }
 
