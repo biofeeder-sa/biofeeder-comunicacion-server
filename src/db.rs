@@ -21,7 +21,7 @@ fn get_conn(dbname: &str, host: &str, db_user: &str, password: &str, db_port: &s
 
     let pool = Pool::builder()
         .min_idle(Some(10))
-        .max_lifetime(Some(time::Duration::from_secs(300)))
+        .max_lifetime(Some(time::Duration::from_secs(60)))
         .max_size(1800)
         .build(manager);
 
