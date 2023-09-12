@@ -58,13 +58,19 @@ pub struct Device {
     pub status: Option<String>,
     pub mode: Option<String>,
     pub empty_alarm: Option<bool>,
+    pub motor_alarm_id: Option<i32>,
+    pub empty_alarm_id: Option<i32>,
+    pub rssi_alarm_id: Option<i32>,
+    pub battery_alarm_id: Option<i32>,
+    pub battery_level: Option<String>,
+    pub last_signal: Option<f64>,
 }
 
 type Shrimp = (Option<String>, Option<i32>);
 
 impl Device {
     /// Create a new device object
-    pub fn new(id: i32, network_id: Option<i32>, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>, empty_alarm: Option<bool>) -> Self {
+    pub fn new(id: i32, network_id: Option<i32>, name: String, address: String, protocol: String, shrimps: Shrimp, status: Option<String>, pond_id: Option<i32>, mode: Option<String>, empty_alarm: Option<bool>, last_signal: Option<f64>, battery_level: Option<String>) -> Self {
         Self {
             id,
             network_id,
@@ -76,7 +82,13 @@ impl Device {
             status,
             pond_id,
             mode,
-            empty_alarm
+            empty_alarm,
+            last_signal,
+            battery_level,
+            motor_alarm_id: None,
+            empty_alarm_id: None,
+            rssi_alarm_id: None,
+            battery_alarm_id: None
         }
     }
 
@@ -92,7 +104,7 @@ impl Device {
     /// or a empty hopper.
     /// If error occurrs return a Postgres Error
     /// otherwise returns Ok
-    pub fn create_device_status(&self, timestamp: &NaiveDateTime, status: DeviceStatus, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
+    pub fn create_device_status(&mut self, timestamp: &NaiveDateTime, status: DeviceStatus, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
         // st tendra "empty" o "full"
         let st = match status {
             DeviceStatus::Empty => "empty",
@@ -147,9 +159,7 @@ impl Device {
         let result = conn.query("UPDATE device set hopper_status=$1, empty_alarm=$2 where id=$3",
                                 &[&st, &empty_alarm, &self.id]);
 
-        let device_alarm_history = create_or_update_device_alarm_history(Some(self.id),
-                                                                             "empty_alarm".to_string(),
-                                                                        empty_alarm, conn);
+        create_or_update_device_alarm_history(self, "empty_alarm".to_string(), empty_alarm, conn);
         match result {
             Ok(_response) => {
                 debug!("Hopper status actualizado");
@@ -192,7 +202,7 @@ impl Device {
         };
     }
 
-    pub fn create_logs_from_fetch(&self, var: &Var, value: &String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
+    pub fn create_logs_from_fetch(&mut self, var: &Var, value: &String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
         let now = chrono::Utc::now();
         let now = now.naive_utc();
         let val = value.parse::<f32>();
@@ -333,6 +343,8 @@ impl Device {
                             None,
                             None,
                             Some(false),
+                            None,
+                            None
                         )
                     );
                 };
@@ -344,7 +356,7 @@ impl Device {
 
     pub fn get_feeders(&self, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Option<Vec<Device>> {
         let mut device_vec: Vec<Device> = Vec::new();
-        let statement = conn.prepare("SELECT d.id, network_id, d.name, address, n.farm_id, d.empty_alarm \
+        let statement = conn.prepare("SELECT d.id, network_id, d.name, address, n.farm_id, d.empty_alarm, d.last_signal, d.battery_level \
     from device d inner join network n on n.id=d.network_id inner join profile p on p.id=d.profile_id \
     where uc_assigned_id=$1 and p.profile_type='feeder' order by address asc").unwrap();
         let result = conn.query(&statement, &[&self.id]);
@@ -370,6 +382,8 @@ impl Device {
                             None,
                             None,
                             row.get(5),
+                            row.get(6),
+                            row.get(7)
                         )
                     );
                 };
@@ -383,7 +397,7 @@ impl Device {
     /// Returns and Option vector of devices
     pub fn get_children_devices(&self, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Option<Vec<Device>> {
         let mut device_vec: Vec<Device> = Vec::new();
-        let statement = conn.prepare("SELECT d.id, network_id, d.name, address, n.farm_id \
+        let statement = conn.prepare("SELECT d.id, network_id, d.name, address, n.farm_id, d.last_signal, d.battery_level \
     from device d inner join network n on n.id=d.network_id \
     where uc_assigned_id=$1 order by address asc").unwrap();
         let result = conn.query(&statement, &[&self.id]);
@@ -409,6 +423,8 @@ impl Device {
                             None,
                             None,
                             Some(false),
+                            row.get(5),
+                            row.get(6),
                         )
                     );
                 };
@@ -436,7 +452,7 @@ impl Device {
     }
 
     /// Insert status log into database
-    pub fn insert_status_log(&self, timestamp: &NaiveDateTime, temperature: Option<i32>, signal: i32, battery: Option<f32>, panel: Option<f32>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
+    pub fn insert_status_log(&mut self, timestamp: &NaiveDateTime, temperature: Option<i32>, signal: i32, battery: Option<f32>, panel: Option<f32>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
         info!("Insertando status logs para {}", self.name);
         let create_date = chrono::Utc::now();
         let battery = battery.unwrap_or(0.0) as f64;
@@ -444,24 +460,20 @@ impl Device {
         let temperature = temperature.unwrap_or(0) as f64;
         let signal_float = -signal as f64;
         let mut signal_alarm = false;
-        let signal = signal.to_string();
         let statement = conn.prepare("INSERT INTO device_log_status(create_date, device_id, timestamp, temp, signal, status_v_1, status_v_2, farm_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8)").unwrap();
         let result = conn.execute(&statement,
                                   &[&create_date.naive_utc(), &self.id, &timestamp, &temperature, &signal_float, &battery, &panel, &self.farm_id]);
-        let dev_statement = conn.prepare("UPDATE device set signal_alarm=$1, last_signal=$2 where id=$3").unwrap();
         match result {
             Ok(_response) => debug!("Status log guardado con exito"),
             Err(e) => info!("Error al guardar log {}", e)
         };
+        let dev_statement = conn.prepare("UPDATE device set signal_alarm=$1, last_signal=$2 where id=$3").unwrap();
         // update signal alarm and value
         if signal_float <= -90.00 as f64 {
             signal_alarm = true;
         }
-        let dev_result = conn.execute(&dev_statement,
-                                      &[&signal_alarm, &signal_float, &self.id]);
-        let device_alarm_history = create_or_update_device_alarm_history(Some(self.id),
-                                                                             "signal_alarm".to_string(),
-                                                                        signal_alarm, conn);
+        let dev_result = conn.execute(&dev_statement, &[&signal_alarm, &signal_float, &self.id]);
+        create_or_update_device_alarm_history(self,  "signal_alarm".to_string(), signal_alarm, conn);
 
         match dev_result {
             Ok(_response) => debug!("Signal actualizado con exito"),
@@ -608,7 +620,7 @@ impl Device {
 
 /// Returns a device (if exists), for this case should be an UC device
 pub fn get_device(address: String, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> Result<Option<Device>, Error> {
-    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id, d.mode, d.empty_alarm \
+    let result = conn.query("SELECT d.id, d.network_id, d.name, address, p.model, sp.name, sf.id, d.status, sp.id, d.mode, d.empty_alarm, d.last_signal, d.battery_level \
 from device d \
 left join protocol p on p.id=d.protocol_id \
 left join shrimps_pond sp on sp.id=d.pond_id \
@@ -621,7 +633,7 @@ where address=$1", &[&address])?;
         let device = Device::new(result.get(0), result.get(1),
                                  result.get(2), result.get(3), result.get(4),
                                  (result.get(5), result.get(6)) as Shrimp,
-                                 result.get(7), result.get(8), result.get(9), result.get(10));
+                                 result.get(7), result.get(8), result.get(9), result.get(10), result.get(11), result.get(12));
         Ok(Some(device))
     } else {
         info!("No se encontro el dispositivo con address {}", address);
@@ -645,10 +657,10 @@ pub fn bulk_update_communication(devices: &Vec<i32>, conn: &mut PooledConnection
     }
 }
 
-pub fn bulk_clean_alarms(devices: &Vec<i32>, parent_device: Option<i32>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
+pub fn bulk_clean_alarms(devices: &mut Vec<Device>, parent_device: Option<i32>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
     let devices_str: Vec<String> = devices
         .iter()
-        .map(|x| x.to_string())
+        .map(|x| x.id.to_string())
         .collect();
 
     let create_date = chrono::Utc::now() - chrono::Duration::minutes(3);
@@ -657,18 +669,14 @@ pub fn bulk_clean_alarms(devices: &Vec<i32>, parent_device: Option<i32>, conn: &
     and active=true", devices_str.join(","), create_date);
     let result = conn.batch_execute(&query);
 
-    // alarm queries
-    let alarm_query = conn.prepare("SELECT * from alarm_alarm where \
-    device_id=$1 and active = true and bit_position=$2 limit 1", ).unwrap();
-    let bat_alarm_dev_update = conn.prepare("UPDATE device set \
-    battery_alarm=$1 where id=$2").unwrap();
-    let motor_alarm_dev_update = conn.prepare("UPDATE device set \
-    motor_alarm=$1 where id=$2").unwrap();
-
     match result {
         Ok(_r) => debug!("Alarm alarm eliminados"),
         Err(r) => info!("Error al bulk alarm_alarm {}", r)
     }
+
+    // alarm queries
+    let alarm_query = conn.prepare("SELECT bit_position FROM alarm_alarm where device_id=$1 and active=true").unwrap();
+    let alarm_dev_update = conn.prepare("UPDATE device set battery_alarm=$1, motor_alarm=$2 where id=$3").unwrap();
 
     if let Some(parent_device) = parent_device {
         let result = conn.execute("DELETE FROM alarm_pre_alarm where device_id=$1", &[&parent_device]);
@@ -678,99 +686,98 @@ pub fn bulk_clean_alarms(devices: &Vec<i32>, parent_device: Option<i32>, conn: &
         }
     }
     // check alarms for each device
-    for dev in devices_str {
-        let dev_id = dev.parse::<i32>().unwrap();
+    for dev_id in devices {
         let mut set_alarm: bool = false;
-        // battery
-        let has_active_bat_alarm = conn.query(&alarm_query, &[&dev_id, &20]);
-        if let Ok(bat_active_alarm_result) = has_active_bat_alarm {
-            if bat_active_alarm_result.is_empty() {
-                set_alarm = false;
-                conn.execute(&bat_alarm_dev_update, &[&set_alarm, &dev_id]);
-            } else {
-                set_alarm = true;
-                conn.execute(&bat_alarm_dev_update, &[&set_alarm, &dev_id]);
+        let mut motor_alarm = false;
+        let mut battery_alarm = false;
+        let alarms = conn.query(&alarm_query, &[&dev_id.id]);
+        if let Ok(alarms) = alarms{
+            if !alarms.is_empty(){
+                for row in alarms{
+                    let bit_position: i32 = row.get(0);
+                    if bit_position == 20{
+                        create_or_update_device_alarm_history(dev_id, "battery_alarm".to_string(), true, conn);
+                        battery_alarm = true;
+                    }else if bit_position == 1{
+                        create_or_update_device_alarm_history(dev_id, "motor_alarm".to_string(), true, conn);
+                        motor_alarm = true;
+                    }
+                }
             }
-            let device_alarm_history = create_or_update_device_alarm_history(Some(dev_id),
-                                                                             "battery_alarm".to_string(),
-                                                                        set_alarm, conn);
-            info!("Editando alarma de batería para {}", dev);
-        }
-        // motor
-        let has_active_motor_alarm = conn.query(&alarm_query, &[&dev_id, &1]);
-        if let Ok(motor_active_alarm_result) = has_active_motor_alarm {
-            if motor_active_alarm_result.is_empty() {
-                set_alarm = false;
-                conn.execute(&motor_alarm_dev_update, &[&set_alarm, &dev_id]);
-            } else {
-                set_alarm = true;
-                conn.execute(&motor_alarm_dev_update, &[&set_alarm, &dev_id]);
+            else{
+                conn.execute(&alarm_dev_update, &[&battery_alarm, &motor_alarm, &dev_id.id]);
             }
-            let device_alarm_history = create_or_update_device_alarm_history(Some(dev_id),
-                                                                             "motor_alarm".to_string(),
-                                                                        set_alarm, conn);
-            info!("Editando alarma de motor para {}", dev);
         }
     }
 }
 
-pub fn create_or_update_device_alarm_history(device_id: Option<i32>, alarm_type: String, alarmed: bool,
+pub fn create_or_update_device_alarm_history(device: &mut Device, alarm_type: String, alarmed: bool,
                                              conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) {
     let now = chrono::Utc::now();
     let now = now.naive_utc();
-
-    let query = format!("SELECT id FROM device_alarm_history \
-        where {alarm_type}=True and still_alarmed=True and device_id=$1");
-    let result = conn.query(&query, &[&device_id]).unwrap();
-
-    // device alarm history query
-    let create_query = format!("INSERT INTO device_alarm_history(device_id, farm_id, pond_id, \
-                    {alarm_type}, still_alarmed, alarm_counter, signal, battery_level, \
-                    last_alarmed_date, create_date) \
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)");
-    return if !result.is_empty() {
-        let r = &result[0];
-        let dev_alarm_history = DeviceAlarmHistory {
-            id: r.get(0)
-        };
-        // update existing record
-        if alarmed {
-            let history_alarm_record_update = conn.execute(
-            "UPDATE device_alarm_history SET alarm_counter=alarm_counter+1, last_alarmed_date=$1 \
-                where id=$2", &[&now, &dev_alarm_history.id]);
-
-        } else {
-            let history_alarm_record_update = conn.execute(
-            "UPDATE device_alarm_history SET still_alarmed=False, non_alarmed_date=$1 \
-                where id=$2", &[&now, &dev_alarm_history.id]);
-
+    let id_to_query = match alarm_type.as_str(){
+        "motor_alarm" => {
+            let value = device.motor_alarm_id;
+            if !alarmed{
+                device.motor_alarm_id = None;
+            }
+            value
+        },
+        "empty_alarm" => {
+            let value = device.empty_alarm_id;
+            if !alarmed{
+                device.empty_alarm_id = None;
+            }
+            value
+        },
+        "signal_alarm" => {
+            let value = device.rssi_alarm_id;
+            if !alarmed{
+                device.rssi_alarm_id = None;
+            }
+            value
+        },
+        _ => {
+            let value = device.battery_alarm_id;
+            if !alarmed{
+                device.battery_alarm_id = None;
+            }
+            value
         }
-        // match history_alarm_record_update {
-        //         Ok(_r) => debug!("Editado device alarm history"),
-        //         Err(r) => info!("Error al editar device alarm history {}", r)
-        //     }
-
-    } else {
-        // create new record
-        if alarmed {
-            let result = conn.query("SELECT farm_id, pond_id, last_signal, \
-                battery_level FROM device where id=$1",&[&device_id]).unwrap();
-            if !result.is_empty() {
-                let dr = &result[0];
-                let farm_id: i32 = dr.get(0);
-                let pond_id: i32 = dr.get(1);
-                let last_signal: f64 = dr.get(2);
-                let battery_level: Option<String> = dr.get(3);
-                let history_alarm_record_create = conn.execute(&create_query,
-                &[&device_id, &farm_id, &pond_id, &true, &true, &1, &last_signal, &battery_level,
-                    &now, &now]);
-
-                match history_alarm_record_create {
-                    Ok(_r) => debug!("Creado device alarm history"),
-                    Err(r) => info!("Error al crear device alarm history {}", r)
-                }
+    };
+    let mut result;
+    let mut query;
+    if let Some(id_query) = id_to_query{
+        if alarmed{
+            query = conn.prepare("UPDATE device_alarm_history SET alarm_counter=alarm_counter+1, last_alarmed_date=$1 \
+                where id=$2").unwrap();
+        }else{
+            query = conn.prepare("UPDATE device_alarm_history SET still_alarmed=False, non_alarmed_date=$1 \
+                where id=$2").unwrap();
+        }
+        result = conn.execute(&query, &[&now, &id_query]);
+    }else{
+        let query = format!("SELECT id FROM device_alarm_history where {alarm_type}=True and still_alarmed=True and device_id=$1");
+        let result = conn.query_one(&query, &[&device.id]);
+        if let Ok(result) = result{
+            let id: i32 = result.get(0);
+            match alarm_type.as_str() {
+                "motor_alarm" => device.motor_alarm_id = Some(id),
+                "empty_alarm" => device.empty_alarm_id = Some(id),
+                "signal_alarm" => device.rssi_alarm_id = Some(id),
+                _ => device.battery_alarm_id = Some(id),
+            }
+            let query = conn.prepare("UPDATE device_alarm_history SET alarm_counter=alarm_counter+1, last_alarmed_date=$1 \
+                where id=$2").unwrap();
+            let _ = conn.execute(&query, &[&now, &id]);
+        }else{
+            if alarmed{
+                let create_query = format!("INSERT INTO device_alarm_history(device_id, farm_id, pond_id, \
+                        {alarm_type}, still_alarmed, alarm_counter, signal, battery_level, \
+                        last_alarmed_date, create_date) \
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)");
+                conn.execute(&create_query, &[&device.id, &device.farm_id, &device.pond_id, &true, &true, &1, &device.last_signal, &device.battery_level, &now, &now]);
             }
         }
-
     }
 }

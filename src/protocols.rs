@@ -18,7 +18,7 @@ type ResponseCommand = (Option<i32>, MessageMode, String, Option<HashMap<String,
 pub trait Protocol{
 
     /// Process al packets response packets or logs packets from devices
-    fn process_packet<'a>(&self, device: &Device, data: &Vec<&'a str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
+    fn process_packet<'a>(&self, device: &mut Device, data: &Vec<&'a str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>){
         // Sacamos el comando
         let command = data[0];
         let mut real_data: Vec<&str>;
@@ -151,7 +151,7 @@ pub trait Protocol{
     }
 
     /// Parse a read response from device
-    fn read_response_function(&self, device: &Device, data: &mut Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    fn read_response_function(&self, device: &mut Device, data: &mut Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
         // Option placeholder
         let mut placeholder: Option<HashMap<String, String>> = None;
         data.remove(0);
@@ -209,7 +209,7 @@ pub trait Protocol{
         (None, MessageMode::ModeWriteResponse, "Respuesta de escritura".to_string(), None)
     }
 
-    fn log_recovery_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand;
+    fn log_recovery_function(&self, device: &mut Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand;
 
     fn rssi_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand;
 
@@ -235,7 +235,7 @@ pub trait Protocol{
 
     fn log_dosage_hydro_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand;
 
-    fn log_status_uc_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand;
+    fn log_status_uc_function(&self, device: &mut Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand;
 
     fn log_status_device_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand;
 
@@ -254,7 +254,7 @@ pub trait Protocol{
 struct ProtocolX2;
 
 impl Protocol for ProtocolX2{
-    fn log_recovery_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
+    fn log_recovery_function(&self, _device: &mut Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
         todo!()
     }
 
@@ -306,7 +306,7 @@ impl Protocol for ProtocolX2{
         todo!()
     }
 
-    fn log_status_uc_function(&self, _device: &Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    fn log_status_uc_function(&self, _device: &mut Device, _data: &Vec<&str>, _conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
         todo!()
     }
 
@@ -339,7 +339,7 @@ impl Protocol for ProtocolX2{
 struct ProtocolUC;
 
 impl Protocol for ProtocolUC{
-    fn log_recovery_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    fn log_recovery_function(&self, device: &mut Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
         todo!()
     }
 
@@ -364,10 +364,10 @@ impl Protocol for ProtocolUC{
 
         // Todos los alimentadores asociados a esta UC
         let op_children = device.get_children_devices(conn);
-        if let Some(children) = op_children{
+        if let Some(mut children) = op_children{
 
             // Obtenemos el alimentador
-            let child = &children[position as usize];
+            let mut child = &mut children[position as usize];
             info!("Entramos a los AA {}-{}", child.name, child.address);
             let mut var: Option<Var>;
             let mut len_data_var = 0;
@@ -439,7 +439,7 @@ impl Protocol for ProtocolUC{
         todo!()
     }
 
-    fn log_status_uc_function(&self, device: &Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    fn log_status_uc_function(&self, device: &mut Device, data: &Vec<&str>, conn: &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
         todo!()
     }
 
@@ -774,7 +774,7 @@ struct ProtocolMQTT;
 
 impl Protocol for ProtocolMQTT{
 
-    fn log_recovery_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
+    fn log_recovery_function(&self, device: &mut Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand{
         let command = data[0];
         let mut real_data: Vec<&str> = data[3..].to_vec();
 
@@ -893,15 +893,15 @@ impl Protocol for ProtocolMQTT{
 
     /// Parse a feed log from UC 2.0
     fn feed_log_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let mut placeholder: HashMap<String, String> = HashMap::new();
+        let placeholder: HashMap<String, String> = HashMap::new();
         let hex_date = data[0..6].to_vec();
         let real_date: Vec<String> = hex_date
             .iter()
             .map(|x| str_to_int(*x, 16).to_string())
             .collect();
         let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-        let value = str_to_int(data[6..10].to_vec().join("").as_str(), 16) as f32;
-        let var_id = device.get_variable("0D49", conn);
+        // let value = str_to_int(data[6..10].to_vec().join("").as_str(), 16) as f32;
+        // let var_id = device.get_variable("0D49", conn);
 
         // if let Some(var) = var_id {
         //     placeholder.insert(var.name, value.to_string());
@@ -910,35 +910,33 @@ impl Protocol for ProtocolMQTT{
         // }
 
         let empty_feeders = str_to_int(data[10..12].to_vec().join("").as_str(), 16);
-        let children = device.get_feeders(conn).unwrap();
-        let mut devices_vec: Vec<i32> = Vec::new();
+        let mut children = device.get_feeders(conn).unwrap();
         // Iteramos sobre cada alimentador y creamos el estado de las tolvas
-        for (i, child) in children.iter().enumerate(){
+        for (i, child) in children.iter_mut().enumerate(){
             if empty_feeders & 2i32.pow(i as u32) > 0{
                 child.create_device_status(&timestamp, DeviceStatus::Empty, conn);
             }else{
                 child.create_device_status(&timestamp, DeviceStatus::Full, conn);
             }
-            devices_vec.push(child.id);
         }
-        bulk_clean_alarms(&devices_vec, None, conn);
+        bulk_clean_alarms(&mut children, None, conn);
         (None, MessageMode::ModeLogResponse, "Log acumulado x hora".to_string(), Some(placeholder))
     }
 
     /// Parse a feed log confirmation
     fn feed_log_confirmation_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let mut placeholder: HashMap<String, String> = HashMap::new();
-        let hex_date = data[0..6].to_vec();
-        let real_date: Vec<String> = hex_date
-            .iter()
-            .map(|x| str_to_int(*x, 16).to_string())
-            .collect();
-        let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
-        let value = str_to_int(data[6..8].join("").as_str(), 16) as f32;
+        let placeholder: HashMap<String, String> = HashMap::new();
+        // let hex_date = data[0..6].to_vec();
+        // let real_date: Vec<String> = hex_date
+        //     .iter()
+        //     .map(|x| str_to_int(*x, 16).to_string())
+        //     .collect();
+        // let timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
+        // let value = str_to_int(data[6..8].join("").as_str(), 16) as f32;
         let feeders = BinaryString::from_hex(data[8..10].join("")).unwrap();
         let mut total_feeders = feeders.to_string();
-        let feeders = feeders.add_spaces().unwrap();
-        let var_id = device.get_variable("0CEB", conn);
+        // let feeders = feeders.add_spaces().unwrap();
+        // let var_id = device.get_variable("0CEB", conn);
         total_feeders = total_feeders.replace("0", "");
         // if let Some(var) = var_id {
         //     placeholder.insert(var.name, value.to_string());
@@ -963,9 +961,9 @@ impl Protocol for ProtocolMQTT{
 
     /// Parse a log sound
     fn log_sound_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
-        let raw_data = &data[6..data.len()];
-        let date: Vec<&str> = data[..6].to_vec();
-        let var = device.get_variable("DDE0", conn).unwrap();
+        // let raw_data = &data[6..data.len()];
+        // let date: Vec<&str> = data[..6].to_vec();
+        // let var = device.get_variable("DDE0", conn).unwrap();
         let now = chrono::Utc::now();
         let now = now.naive_utc();
 
@@ -984,11 +982,11 @@ impl Protocol for ProtocolMQTT{
             }
         }
         // Obtenemos la variable indicador de duracion de sonido
-        let real_date: Vec<String> = date
-            .iter()
-            .map(|x| str_to_int(*x, 16).to_string())
-            .collect();
-        let mut timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
+        // let real_date: Vec<String> = date
+        //     .iter()
+        //     .map(|x| str_to_int(*x, 16).to_string())
+        //     .collect();
+        // let mut timestamp = chrono::NaiveDateTime::parse_from_str(real_date.join(" ").as_str(), "%H %M %S %d %m %y").unwrap();
         // Iteramos sobre la data y obtenemos cada valor de sonido
         // for value in raw_data.iter(){
         //     // Sacamos el valor como f32
@@ -1038,7 +1036,7 @@ impl Protocol for ProtocolMQTT{
     }
 
     /// Parse a log status
-    fn log_status_uc_function(&self, device: &Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
+    fn log_status_uc_function(&self, device: &mut Device, data: &Vec<&str>, conn:  &mut PooledConnection<PostgresConnectionManager<NoTls>>) -> ResponseCommand {
         let date: Vec<&str> = data[..6].to_vec();
         let real_date: Vec<String> = date
             .iter()
@@ -1074,12 +1072,12 @@ impl Protocol for ProtocolMQTT{
         let mut battery: f32 = 0.0;
         let mut panel: f32 = 0.0;
         let mut placeholder: HashMap<String, String> = HashMap::new();
-        if let Some(children) = devices{
+        if let Some(mut children) = devices{
             // Si no tiene alimentadores
             if children.is_empty(){
                 return (None, MessageMode::ModeLogResponse, "Log de Status UC".to_string(), None);
             }
-            let child = &children[device_position];
+            let mut child = &mut children[device_position];
 
             let battery_var = child.get_variable("0D86", conn);
             if let Some(bv) = battery_var{
@@ -1187,17 +1185,17 @@ pub fn process_packet(payload: &str, topic: String, pool: Pool<PostgresConnectio
                 None
             });
 
-            if let Some(dd) = option_device {
+            if let Some(mut dd) = option_device {
                 // Sacamos el protocolo
                 let protocol_name = dd.protocol.as_str();
                 if protocol_name == "protocol.mqtt" {
-                    ProtocolMQTT.process_packet(&dd, &payload_sp, &mut conn);
+                    ProtocolMQTT.process_packet(&mut dd, &payload_sp, &mut conn);
                 }else if protocol_name == "protocol.uc"{
                     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
-                    ProtocolUC.process_packet(&dd, &variable_payload, &mut conn);
+                    ProtocolUC.process_packet(&mut dd, &variable_payload, &mut conn);
                 }else if protocol_name == "protocol.x2"{
                     let variable_payload: Vec<&str> = payload_sp[15..payload_sp.len() - 1].to_vec();
-                    ProtocolX2.process_packet(&dd, &variable_payload, &mut conn);
+                    ProtocolX2.process_packet(&mut dd, &variable_payload, &mut conn);
                 }
                 dd.update_communication(&mut conn);
             }

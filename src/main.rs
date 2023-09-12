@@ -29,9 +29,6 @@ fn main() {
         if let Some(db_name) = databases.get("db_name").unwrap(){
             info!("Creating and connecting mqtt client for {}", db_name);
             mqtt_client = Some(MqttClient::new(db_name.to_owned()));
-
-            // Conectamos el cliente MQTT e iniciamos el proceso
-            // thread::spawn(move || mqtt_client.connect());
         }
     }
     if let Some(mqtt) = mqtt_client.borrow_mut(){

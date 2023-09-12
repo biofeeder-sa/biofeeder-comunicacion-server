@@ -1,6 +1,5 @@
 //Toda la comunicacion con biomatic esta aqui
 use std::{process, sync::RwLock, thread, time::Duration};
-use std::collections::HashMap;
 use paho_mqtt::{AsyncClient, ConnectOptionsBuilder, CreateOptionsBuilder, Message, MQTT_VERSION_5};
 use log::{info, error};
 use r2d2_postgres::PostgresConnectionManager;
@@ -36,9 +35,6 @@ fn receive(cli: &AsyncClient, msg: Option<Message>){
             // Obtenemos el pool de conexiones
             let connection_pool = lock.read().unwrap();
             pool_clone = Some(connection_pool.clone());
-            // if let Some(connection_pool) = connection_pool{
-            //     pool_clone = Some(connection_pool.clone());
-            // }
         }
 
         let payload_str = msg.payload_str();
@@ -59,13 +55,11 @@ fn on_connect_failure(cli: &AsyncClient, _msgid: u16, rc: i32) {
 
 fn on_connect_success(cli: &AsyncClient, _msgid: u16){
     info!("Connection succeeded");
-    let data = cli.user_data().unwrap();
     info!("Subscribing to topic: {}", TOPIC);
     let new_topics: Vec<String> = vec!["server/uc/#".to_string(), "server/x2/#".to_string()];
     let qos = vec![0; new_topics.len()];
     // Subscribimos al topico
     cli.subscribe_many(&new_topics, &qos);
-    // cli.subscribe(TOPIC, 0);
 
 }
 
@@ -75,8 +69,6 @@ impl MqttClient{
     pub fn new(db_name: String) -> Self{
         let db_name = db_name.as_str();
         let pool = db::connect(db_name).unwrap();
-        let mut topics: Vec<String> = Vec::new();
-        let mut conn = pool.get().unwrap();
 
         // Creamos las opciones para el client MQTT
         let opts = CreateOptionsBuilder::new()
@@ -92,7 +84,6 @@ impl MqttClient{
         });
 
         // Cerramos la conexion con la base de datos, no lo necesitamos mas
-        // conn.close();
 
         Self{
             db_name: db_name.to_string(),
@@ -124,12 +115,7 @@ impl MqttClient{
 
         // Connexion con el broker
         self.cli.connect_with_callbacks(conn_options, on_connect_success, on_connect_failure);
-
         info!("Mqtt client {} subscrito..", self.db_name);
 
-        // Sin esto el programa termina
-        // loop {
-        //     thread::sleep(Duration::from_millis(1000));
-        // }
     }
 }
